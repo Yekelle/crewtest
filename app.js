@@ -778,6 +778,7 @@ function crewtestMergeIntoGame(preview){
   match.loggerVersion=merged.LoggerVersion||match.loggerVersion;
   match.fingerprints=Array.from(new Set((match.fingerprints||[match.fingerprint]).concat([preview.fingerprint])));
   match.sources=Array.from(new Set((match.sources||[]).concat(preview.sourceName?[preview.sourceName]:[])));
+  crewtestRenumberSession(match.sessionId);
   crewtestSaveState();
   currentScope=SESSIONS[match.sessionId].month;currentPlayerMonth=currentScope;currentPlayerMode="month";
   crewtestRefreshAll(match.sessionId);
@@ -800,6 +801,66 @@ function crewtestRecalculateImportedRepairs(){
     });
   });
   if(changed)crewtestSaveState();
+}
+
+function crewtestInfoForGame(game){
+  if(!game)return null;
+  const all=Object.values(TEST_IMPORTS).filter(Boolean);
+  const byFingerprint=all.find(function(info){
+    return info.fingerprint===game.fingerprint||
+      (Array.isArray(info.fingerprints)&&info.fingerprints.includes(game.fingerprint));
+  });
+  if(byFingerprint)return byFingerprint;
+  return all.find(function(info){
+    return info.sessionId===game.session&&Number(info.gameNumber)===Number(game.n);
+  })||null;
+}
+function crewtestGameStartedAt(game){
+  const direct=crewtestTs(game&&game.startedAt);
+  if(direct!==null)return direct;
+  const info=crewtestInfoForGame(game);
+  return crewtestTs((info&&info.startedAt)||(info&&info.raw&&info.raw.StartedAt));
+}
+function crewtestRenumberSession(sessionId){
+  const games=GAMES.filter(function(g){return g.session===sessionId});
+  if(!games.length)return [];
+
+  const oldNumbers=new Map(games.map(function(g){return [g.id,Number(g.n)||0]}));
+  games.sort(function(a,b){
+    const ta=crewtestGameStartedAt(a),tb=crewtestGameStartedAt(b);
+    if(ta===null&&tb===null)return (oldNumbers.get(a.id)||0)-(oldNumbers.get(b.id)||0);
+    if(ta===null)return 1;
+    if(tb===null)return -1;
+    if(ta!==tb)return ta-tb;
+    return (oldNumbers.get(a.id)||0)-(oldNumbers.get(b.id)||0);
+  });
+
+  const changes=[];
+  games.forEach(function(game,index){
+    const next=index+1,old=oldNumbers.get(game.id)||Number(game.n)||0;
+    game.n=next;
+    RECORDS.filter(function(r){return r.gameId===game.id}).forEach(function(r){r.g=next});
+    const info=crewtestInfoForGame(game);
+    if(info)info.gameNumber=next;
+    if(old!==next)changes.push({gameId:game.id,from:old,to:next});
+  });
+  return changes;
+}
+function crewtestRenumberAll(){
+  const sessions=[...new Set(GAMES.map(function(g){return g.session}).filter(Boolean))];
+  const changes=[];
+  sessions.forEach(function(id){changes.push.apply(changes,crewtestRenumberSession(id))});
+  return changes;
+}
+function crewtestProposedGameNumber(sessionId,data){
+  const incoming=crewtestTs(data&&data.StartedAt);
+  const games=GAMES.filter(function(g){return g.session===sessionId});
+  if(incoming===null)return games.length+1;
+  const before=games.filter(function(g){
+    const t=crewtestGameStartedAt(g);
+    return t!==null&&t<incoming;
+  }).length;
+  return before+1;
 }
 
 function crewtestSaveState(){
@@ -850,14 +911,16 @@ function crewtestBuildPreview(data,sourceName){
   const sessionId=crewtestSessionId(data);
   if(!sessionId)throw new Error("La date StartedAt n\u0027est pas reconnue.");
   const match=crewtestFindDuplicate(data);
-  const nums=GAMES.filter(function(g){return g.session===sessionId}).map(function(g){return Number(g.n)||0});
-  const nextGame=Math.max.apply(null,[0].concat(nums))+1;
+  const nextGame=match&&match.info?Number(match.info.gameNumber):crewtestProposedGameNumber(sessionId,data);
   const win=crewtestWinnerInfo(data.WinnerReason);
   const warnings=[];
   let comparison=null;
   if(!win.winner)warnings.push("Camp gagnant non reconnu.");
   if(!win.method)warnings.push("Méthode de victoire non reconnue.");
   if((data.Events||[]).some(function(e){return e.Type==="sabotage_end"}))warnings.push("Les anciennes V2/V2.1 ne permettent pas encore d\u0027attribuer fiablement tous les réparateurs.");
+  if(!match&&GAMES.some(function(g){return g.session===sessionId&&Number(g.n)>=nextGame})){
+    warnings.push("Import chronologique : les games suivantes seront renumérotées automatiquement.");
+  }
   if(match&&match.kind==="exact")warnings.push("Cette source a déjà été importée pour la Game "+match.info.gameNumber+".");
   if(match&&match.kind==="same_game"){
     comparison=crewtestCompareInformation(match.info.raw||{},data);
@@ -1012,6 +1075,7 @@ function crewtestImportData(preview){
     startedAt:data.StartedAt,map:preview.map,playerKey:preview.playerKey,
     loggerVersion:data.LoggerVersion||"",sources:preview.sourceName?[preview.sourceName]:[],raw:data
   };
+  crewtestRenumberSession(sessionId);
   crewtestSaveState();
 
   currentScope=SESSIONS[sessionId].month;
@@ -1019,7 +1083,8 @@ function crewtestImportData(preview){
   currentPlayerMonth=currentScope;
   currentPlayerMode="month";
   crewtestRefreshAll(sessionId);
-  return {sessionId:sessionId,gameNumber:gameNumber};
+  const importedGame=GAMES.find(function(g){return g.id===gameId});
+  return {sessionId:sessionId,gameNumber:importedGame?importedGame.n:gameNumber};
 }
 function crewtestReset(){
   localStorage.removeItem(CREWTEST_STORAGE_KEY);
@@ -1522,6 +1587,7 @@ async function deleteAdminRecord(index){
         }
       }
       GAMES=GAMES.filter(g=>g.id!==gameId);
+      crewtestRenumberSession(r.session);
     }
 
     crewtestSaveState();
@@ -1570,6 +1636,8 @@ async function startApp(){
     authRole="admin";
 
     crewtestLoadState();
+    const renumbered=crewtestRenumberAll();
+    if(renumbered.length)crewtestSaveState();
     crewtestRecalculateImportedRepairs();
 
     const entryNav=document.querySelector('.nav[data-view="entry"]');
