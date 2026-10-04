@@ -200,16 +200,16 @@
         <label>Rôle<select id="form-role"><option>Crew</option><option>Imposteur</option></select></label>
         <label>Résultat<select id="form-result"><option>Victoire</option><option>Défaite</option></select></label>
         <label>Éjecté<select id="form-ejected"><option>Non</option><option>Oui</option></select></label>
-        <label>Reports du streamer<input id="form-reports" type="number" min="0" value="0"></label>
+        <label>Reports normaux (hors self-report)<input id="form-reports" type="number" min="0" value="0"><small id="reports-total-preview">Total reports : 0</small></label>
       </div>
       <div class="two-cols entry-cols">
         <div class="subpanel">
-          <div class="subpanel-head"><div><h3>Événements</h3><p>Kills, mort du streamer, report, self-report, conseil… autant de lignes que nécessaire.</p></div><button id="add-event-btn" class="secondary" type="button">+ Ajouter</button></div>
+          <div class="subpanel-head"><div><h3>Événements</h3><p>Kills, mort du streamer et self-reports. Les reports normaux sont saisis dans le compteur au-dessus.</p></div><button id="add-event-btn" class="secondary" type="button">+ Ajouter</button></div>
           <div id="events-list" class="dynamic-list"></div>
         </div>
         <div class="entry-role-stack">
           <div id="crew-repair-panel" class="subpanel role-panel">
-            <div class="subpanel-head"><div><h3>Réparations de sabotage</h3><p>Nombre total de sabotages réparés par le Crew dans cette game.</p></div></div>
+            <div class="subpanel-head"><div><h3>Réparations de sabotage</h3><p>Nombre de sabotages auxquels ce joueur a participé à la réparation, Crew ou Imposteur.</p></div></div>
             <div class="repair-counter" aria-label="Nombre de réparations">
               <button id="repair-minus" class="secondary" type="button" aria-label="Retirer une réparation">−</button>
               <input id="form-repairs" type="number" min="0" value="0" readonly>
