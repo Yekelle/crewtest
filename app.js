@@ -688,6 +688,53 @@ function crewtestRepairCounts(data){
   return counts;
 }
 
+function crewtestVoteStats(data){
+  const players=Array.isArray(data&&data.Players)?data.Players:[];
+  const meetings=Array.isArray(data&&data.Meetings)?data.Meetings:[];
+  const roleByName=new Map(players.map(function(p){
+    return [String(p.Name||"").trim(),crewtestRole(p.Role)];
+  }));
+  const stats=new Map();
+
+  function get(name){
+    if(!stats.has(name))stats.set(name,{
+      cast:0,playerVotes:0,onImpostor:0,onCrew:0,skips:0,noVote:0,selfVotes:0,
+      crewPlayerVotes:0,crewCorrect:0,crewWrong:0
+    });
+    return stats.get(name);
+  }
+
+  meetings.forEach(function(m){
+    (Array.isArray(m&&m.Votes)?m.Votes:[]).forEach(function(v){
+      const voter=crewtestBaseName(v.Voter,data);
+      if(!voter)return;
+      const s=get(voter);
+      const type=String(v.Type||"").toLowerCase();
+      s.cast++;
+
+      if(type==="skip"){s.skips++;return}
+      if(type==="no_vote"||type==="novote"){s.noVote++;return}
+      if(type!=="player")return;
+
+      s.playerVotes++;
+      const target=crewtestBaseName(v.Target,data);
+      if(target&&target===voter)s.selfVotes++;
+
+      const targetRole=roleByName.get(target);
+      if(targetRole==="Imposteur")s.onImpostor++;
+      else if(targetRole==="Crew")s.onCrew++;
+
+      if(roleByName.get(voter)==="Crew"){
+        s.crewPlayerVotes++;
+        if(targetRole==="Imposteur")s.crewCorrect++;
+        else if(targetRole==="Crew")s.crewWrong++;
+      }
+    });
+  });
+
+  return stats;
+}
+
 function crewtestDeriveGame(data){
   const events=Array.isArray(data&&data.Events)?data.Events:[];
   const meetings=Array.isArray(data&&data.Meetings)?data.Meetings:[];
@@ -717,6 +764,7 @@ function crewtestDeriveGame(data){
     else reportCounts.set(reporter,(reportCounts.get(reporter)||0)+1);
   });
   const repairCounts=crewtestRepairCounts(data);
+  const voteStats=crewtestVoteStats(data);
   const sabotageByPlayer=new Map();
   events.filter(function(e){return e.Type==="sabotage_start"}).forEach(function(start){
     const sab=crewtestSabotageName(start);if(!sab)return;
@@ -746,7 +794,8 @@ function crewtestDeriveGame(data){
       turn=1+meetingTimes.filter(function(mt){return deathEvent.ts!==null&&mt<deathEvent.ts}).length;
     }else if(exiled.has(name))death="Éjecté au conseil";
     const sabotages=sabotageByPlayer.get(name)||[];
-    return {name:name,role:role,reports:reportCounts.get(name)||0,self:selfCounts.get(name)||0,sabotages:sabotages,repair:repairCounts.get(name)||0,kills:kills,death:death,deathPos:deathPos,turn:turn,tasks:role==="Crew"?Number(p.TasksCompleted||0):null,totalTasks:role==="Crew"?Number(p.TasksTotal||0):null,ejected:exiled.has(name)};
+    const vote=voteStats.get(name)||{cast:0,playerVotes:0,onImpostor:0,onCrew:0,skips:0,noVote:0,selfVotes:0,crewPlayerVotes:0,crewCorrect:0,crewWrong:0};
+    return {name:name,role:role,reports:reportCounts.get(name)||0,self:selfCounts.get(name)||0,sabotages:sabotages,repair:repairCounts.get(name)||0,kills:kills,death:death,deathPos:deathPos,turn:turn,tasks:role==="Crew"?Number(p.TasksCompleted||0):null,totalTasks:role==="Crew"?Number(p.TasksTotal||0):null,ejected:exiled.has(name),voteCast:vote.cast,votePlayer:vote.playerVotes,voteImpostor:vote.onImpostor,voteCrew:vote.onCrew,voteSkip:vote.skips,voteNoVote:vote.noVote,voteSelf:vote.selfVotes,crewVoteTotal:vote.crewPlayerVotes,crewVoteCorrect:vote.crewCorrect,crewVoteWrong:vote.crewWrong};
   });
   const t1Deaths=killEvents.filter(function(e){return e.ts!==null&&!meetingTimes.some(function(mt){return mt<e.ts})}).length;
   return {rows:rows,t1Deaths:t1Deaths,win:crewtestWinnerInfo(data.WinnerReason),map:crewtestNormalizeMap(data.Map)};
@@ -773,6 +822,16 @@ function crewtestMergeIntoGame(preview){
     if(row.tasks!==null)r.tasks=Math.max(Number(r.tasks||0),row.tasks);
     if(row.totalTasks!==null)r.totalTasks=Math.max(Number(r.totalTasks||0),row.totalTasks);
     r.ejected=r.ejected===true||row.ejected===true;
+    r.voteCast=Math.max(Number(r.voteCast||0),Number(row.voteCast||0));
+    r.votePlayer=Math.max(Number(r.votePlayer||0),Number(row.votePlayer||0));
+    r.voteImpostor=Math.max(Number(r.voteImpostor||0),Number(row.voteImpostor||0));
+    r.voteCrew=Math.max(Number(r.voteCrew||0),Number(row.voteCrew||0));
+    r.voteSkip=Math.max(Number(r.voteSkip||0),Number(row.voteSkip||0));
+    r.voteNoVote=Math.max(Number(r.voteNoVote||0),Number(row.voteNoVote||0));
+    r.voteSelf=Math.max(Number(r.voteSelf||0),Number(row.voteSelf||0));
+    r.crewVoteTotal=Math.max(Number(r.crewVoteTotal||0),Number(row.crewVoteTotal||0));
+    r.crewVoteCorrect=Math.max(Number(r.crewVoteCorrect||0),Number(row.crewVoteCorrect||0));
+    r.crewVoteWrong=Math.max(Number(r.crewVoteWrong||0),Number(row.crewVoteWrong||0));
   });
   match.raw=merged;
   match.startedAt=merged.StartedAt||match.startedAt;
@@ -864,6 +923,28 @@ function crewtestProposedGameNumber(sessionId,data){
     return t!==null&&t<incoming;
   }).length;
   return before+1;
+}
+
+function crewtestRecalculateImportedVotes(){
+  let changed=false;
+  Object.values(TEST_IMPORTS).filter(Boolean).forEach(function(info){
+    if(!info.raw)return;
+    const derived=crewtestDeriveGame(info.raw);
+    const game=GAMES.find(function(g){
+      return g.session===info.sessionId&&Number(g.n)===Number(info.gameNumber);
+    });
+    if(!game)return;
+    derived.rows.forEach(function(row){
+      const r=RECORDS.find(function(x){return x.gameId===game.id&&x.p===row.name});
+      if(!r)return;
+      const fields=["voteCast","votePlayer","voteImpostor","voteCrew","voteSkip","voteNoVote","voteSelf","crewVoteTotal","crewVoteCorrect","crewVoteWrong"];
+      fields.forEach(function(field){
+        const next=Number(row[field]||0);
+        if(Number(r[field]||0)!==next){r[field]=next;changed=true}
+      });
+    });
+  });
+  if(changed)crewtestSaveState();
 }
 
 function crewtestSaveState(){
@@ -1032,6 +1113,7 @@ function crewtestImportData(preview){
   });
 
   const repairCounts=crewtestRepairCounts(data);
+  const voteStats=crewtestVoteStats(data);
   const sabotageByPlayer=new Map();
   events.filter(function(e){return e.Type==="sabotage_start"}).forEach(function(start){
     const sab=crewtestSabotageName(start);
@@ -1081,6 +1163,7 @@ function crewtestImportData(preview){
       death="Éjecté au conseil";
     }
     const sabotages=sabotageByPlayer.get(name)||[];
+    const vote=voteStats.get(name)||{cast:0,playerVotes:0,onImpostor:0,onCrew:0,skips:0,noVote:0,selfVotes:0,crewPlayerVotes:0,crewCorrect:0,crewWrong:0};
     RECORDS.push({
       id:"test-record-"+preview.fingerprint+"-"+i,gameId:gameId,session:sessionId,p:name,g:gameNumber,role:role,
       reports:reportCounts.get(name)||0,self:selfCounts.get(name)||0,
@@ -1088,7 +1171,11 @@ function crewtestImportData(preview){
       kills:role==="Imposteur"?kills:[],death:death,deathPos:deathPos,turn:turn,
       tasks:role==="Crew"?Number(p.TasksCompleted||0):null,
       totalTasks:role==="Crew"?Number(p.TasksTotal||0):null,
-      ejected:exiled.has(name),note:"Import JSON "+String(data.LoggerVersion||"")
+      ejected:exiled.has(name),
+      voteCast:vote.cast,votePlayer:vote.playerVotes,voteImpostor:vote.onImpostor,voteCrew:vote.onCrew,
+      voteSkip:vote.skips,voteNoVote:vote.noVote,voteSelf:vote.selfVotes,
+      crewVoteTotal:vote.crewPlayerVotes,crewVoteCorrect:vote.crewCorrect,crewVoteWrong:vote.crewWrong,
+      note:"Import JSON "+String(data.LoggerVersion||"")
     });
   });
 
@@ -1274,7 +1361,19 @@ function renderSessions(){
  cards.innerHTML=entries.map(([id,s],i)=>`<button class="session-card ${i===0?"active":""}" data-id="${id}"><h3>${esc(s.date)}</h3><p>${GAMES.filter(g=>g.session===id).length} games enregistrées</p></button>`).join("");
  cards.querySelectorAll(".session-card").forEach(b=>b.addEventListener("click",()=>{cards.querySelectorAll(".session-card").forEach(x=>x.classList.remove("active"));b.classList.add("active");renderSession(b.dataset.id)}));if(entries.length)renderSession(entries[0][0]);
 }
-function renderSession(id){const s=SESSIONS[id],games=GAMES.filter(g=>g.session===id).sort((a,b)=>a.n-b.n),iw=games.filter(g=>g.winner==="Imposteurs").length,cw=games.length-iw;document.getElementById("session-title").textContent=s.date;document.getElementById("session-summary").innerHTML=[["Games",games.length],["Wins Imposteurs",iw],["Wins Crew",cw],["Morts T1 / game",games.length?(games.reduce((a,g)=>a+(g.t1Deaths||0),0)/games.length).toFixed(2).replace(".",","):"0"],["Map la + jouée",mostCommon(games.map(g=>g.map))||"—"]].map(([a,b])=>`<div class="card"><span>${esc(a)}</span><strong>${esc(String(b))}</strong></div>`).join("");document.getElementById("session-games").innerHTML=games.map(g=>`<tr><td>${g.n}</td><td>${esc(g.map)}</td><td>${esc(g.winner)}</td><td>${esc(g.method)}</td><td>${g.t1Deaths||0}</td></tr>`).join("")}
+function renderSession(id){
+ const s=SESSIONS[id],games=GAMES.filter(g=>g.session===id).sort((a,b)=>a.n-b.n),recs=RECORDS.filter(r=>r.session===id),iw=games.filter(g=>g.winner==="Imposteurs").length,cw=games.length-iw;
+ const votes=recs.reduce((a,r)=>a+Number(r.voteCast||0),0),voteImp=recs.reduce((a,r)=>a+Number(r.voteImpostor||0),0),voteCrew=recs.reduce((a,r)=>a+Number(r.voteCrew||0),0),skips=recs.reduce((a,r)=>a+Number(r.voteSkip||0),0),noVotes=recs.reduce((a,r)=>a+Number(r.voteNoVote||0),0),crewVoteTotal=recs.reduce((a,r)=>a+Number(r.crewVoteTotal||0),0),crewVoteCorrect=recs.reduce((a,r)=>a+Number(r.crewVoteCorrect||0),0);
+ document.getElementById("session-title").textContent=s.date;
+ document.getElementById("session-summary").innerHTML=[
+  ["Games",games.length],["Wins Imposteurs",iw],["Wins Crew",cw],
+  ["Morts T1 / game",games.length?(games.reduce((a,g)=>a+(g.t1Deaths||0),0)/games.length).toFixed(2).replace(".",","):"0"],
+  ["Map la + jouée",mostCommon(games.map(g=>g.map))||"—"],
+  ["Votes enregistrés",votes],["Votes sur Imposteur",voteImp],["Votes sur Crew",voteCrew],
+  ["Skips / sans vote",skips+" / "+noVotes],["Justesse du Crew",pct(crewVoteCorrect,crewVoteTotal)]
+ ].map(([a,b])=>`<div class="card"><span>${esc(a)}</span><strong>${esc(String(b))}</strong></div>`).join("");
+ document.getElementById("session-games").innerHTML=games.map(g=>`<tr><td>${g.n}</td><td>${esc(g.map)}</td><td>${esc(g.winner)}</td><td>${esc(g.method)}</td><td>${g.t1Deaths||0}</td></tr>`).join("")
+}
 function mostCommon(arr){const c={};arr.forEach(v=>c[v]=(c[v]||0)+1);return Object.entries(c).sort((a,b)=>b[1]-a[1])[0]?.[0]}
 
 /* ===== Fiche joueur ===== */
@@ -1294,9 +1393,14 @@ function renderPlayer(){
  const all=RECORDS.filter(r=>r.p===currentPlayer);let rr=currentPlayerMode==="all"?all:currentPlayerMode==="month"?all.filter(r=>SESSIONS[r.session]?.month===currentPlayerMonth):all.filter(r=>r.session===currentPlayerMode);
  document.getElementById("p-name").textContent=p.name;const twitchLink=document.getElementById("p-handle");twitchLink.textContent="@"+p.handle+" ↗";twitchLink.href="https://www.twitch.tv/"+encodeURIComponent(p.handle);twitchLink.setAttribute("aria-label","Ouvrir la chaîne Twitch de "+p.name);document.getElementById("p-state").textContent=all.length?"Données présentes":"Aucune grille détaillée";
  if(!all.length){document.getElementById("p-summary").innerHTML=`<div class="card"><span>Statut</span><strong>Pas de données</strong></div>`;document.getElementById("p-stats").innerHTML=`<div class="kv-item"><span>Info</span><strong>Aucune grille fournie dans cette démo.</strong></div>`;document.getElementById("p-maps").innerHTML="";document.getElementById("p-sabotage").innerHTML="";document.getElementById("p-games").innerHTML="";return}
- const wins=rr.filter(r=>resultFor(r)==="Victoire").length,imp=rr.filter(r=>r.role==="Imposteur"),crew=rr.filter(r=>r.role==="Crew"),kills=rr.reduce((a,r)=>a+(r.kills?.length||0),0),reports=rr.reduce((a,r)=>a+(r.reports||0),0),repairs=rr.reduce((a,r)=>a+(Number.isFinite(r.repair)?r.repair:0),0),fav=favoriteSabotage(imp);
+ const wins=rr.filter(r=>resultFor(r)==="Victoire").length,imp=rr.filter(r=>r.role==="Imposteur"),crew=rr.filter(r=>r.role==="Crew"),kills=rr.reduce((a,r)=>a+(r.kills?.length||0),0),reports=rr.reduce((a,r)=>a+(r.reports||0),0),repairs=rr.reduce((a,r)=>a+(Number.isFinite(r.repair)?r.repair:0),0),votes=rr.reduce((a,r)=>a+Number(r.voteCast||0),0),voteImp=rr.reduce((a,r)=>a+Number(r.voteImpostor||0),0),voteCrew=rr.reduce((a,r)=>a+Number(r.voteCrew||0),0),voteSkip=rr.reduce((a,r)=>a+Number(r.voteSkip||0),0),voteNoVote=rr.reduce((a,r)=>a+Number(r.voteNoVote||0),0),voteSelf=rr.reduce((a,r)=>a+Number(r.voteSelf||0),0),crewVoteTotal=rr.reduce((a,r)=>a+Number(r.crewVoteTotal||0),0),crewVoteCorrect=rr.reduce((a,r)=>a+Number(r.crewVoteCorrect||0),0),crewVoteWrong=rr.reduce((a,r)=>a+Number(r.crewVoteWrong||0),0),fav=favoriteSabotage(imp);
  document.getElementById("p-summary").innerHTML=[["Games",rr.length],["Victoires",wins],["Kills",kills],["Reports",reports],["Réparations",repairs]].map(([a,b])=>`<div class="card"><span>${a}</span><strong>${b}</strong></div>`).join("");
- document.getElementById("p-stats").innerHTML=[["Winrate global",pct(wins,rr.length)],["Winrate Crew",pct(crew.filter(r=>resultFor(r)==="Victoire").length,crew.length)],["Winrate Imposteur",pct(imp.filter(r=>resultFor(r)==="Victoire").length,imp.length)],["Part Crew",pct(crew.length,rr.length)],["Morts T1",crew.filter(r=>r.turn===1).length],["Éjections Crew",crew.filter(r=>r.ejected).length],["Éjections Imposteur",imp.filter(r=>r.ejected).length],["Sabotages",rr.reduce((a,r)=>a+(r.sab||0),0)]].map(([a,b])=>`<div class="kv-item"><span>${esc(a)}</span><strong>${esc(String(b))}</strong></div>`).join("");
+ document.getElementById("p-stats").innerHTML=[
+  ["Winrate global",pct(wins,rr.length)],["Winrate Crew",pct(crew.filter(r=>resultFor(r)==="Victoire").length,crew.length)],["Winrate Imposteur",pct(imp.filter(r=>resultFor(r)==="Victoire").length,imp.length)],["Part Crew",pct(crew.length,rr.length)],
+  ["Morts T1",crew.filter(r=>r.turn===1).length],["Éjections Crew",crew.filter(r=>r.ejected).length],["Éjections Imposteur",imp.filter(r=>r.ejected).length],["Sabotages",rr.reduce((a,r)=>a+(r.sab||0),0)],
+  ["Votes enregistrés",votes],["Votes sur Imposteur",voteImp],["Votes sur Crew",voteCrew],["Skips",voteSkip],["Sans vote",voteNoVote],["Auto-votes",voteSelf],
+  ["Votes justes (Crew)",crewVoteCorrect],["Votes à côté (Crew)",crewVoteWrong],["Justesse du vote Crew",pct(crewVoteCorrect,crewVoteTotal)]
+ ].map(([a,b])=>`<div class="kv-item"><span>${esc(a)}</span><strong>${esc(String(b))}</strong></div>`).join("");
  const maps={};imp.forEach(r=>{const g=gameFor(r);if(g)maps[g.map]=(maps[g.map]||0)+1});document.getElementById("p-maps").innerHTML=Object.keys(maps).length?Object.entries(maps).map(([m,n])=>`<div class="map-row"><span>${esc(m)}</span><strong>${n}</strong></div>`).join(""):`<div class="map-row"><span>Aucune game en Imposteur</span><strong>0</strong></div>`;document.getElementById("p-sabotage").innerHTML=`<span>Sabotage préféré en Imposteur</span><strong>${esc(fav?fav.name:(imp.some(r=>(r.sab||0)>0)?"Non renseigné":"Aucun"))}</strong>`;
  document.getElementById("p-games").innerHTML=rr.sort((a,b)=>a.g-b.g).map(r=>{const g=gameFor(r),killsText=r.role==="Imposteur"?(r.kills?.join(" → ")||"Aucun kill"):"—",sortie=r.ejected?"Éjecté":(r.role==="Crew"?(r.death||"Survit"):"Survit");return `<tr><td>${r.g}</td><td>${esc(g?.map||"—")}</td><td>${esc(r.role)}</td><td>${resultFor(r)}</td><td>${esc(g?.method||"—")}</td><td>${r.reports||0}</td><td>${r.self||0}</td><td>${r.sab||0}</td><td>${r.repair===null?"?":r.repair}</td><td>${esc(killsText)}</td><td>${esc(sortie)}</td><td>${r.role==="Crew"&&r.deathPos?`${r.deathPos}${r.deathPos===1?"er":"e"}`:"—"}</td><td>${r.turn?`T${r.turn}`:"—"}</td><td>${r.tasks===null?"—":`${r.tasks}/${r.totalTasks||9}`}</td><td>${esc(r.note||"")}</td></tr>`}).join("")
 }
@@ -1724,6 +1828,7 @@ async function startApp(){
     const renumbered=crewtestRenumberAll();
     if(renumbered.length)crewtestSaveState();
     crewtestRecalculateImportedRepairs();
+    crewtestRecalculateImportedVotes();
 
     const entryNav=document.querySelector('.nav[data-view="entry"]');
     if(entryNav)entryNav.hidden=false;
