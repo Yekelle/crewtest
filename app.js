@@ -866,32 +866,57 @@ document.getElementById("admin-reset").addEventListener("click",async()=>{if(!re
 function renderAll(){renderStats();renderSessions();renderPlayerList();syncPlayerMonth();renderPlayerTabs();renderPlayer()}
 async function startApp(){
 
-if(TEST_MODE){
-  authLoading=false;
-  authUser=null;
-  authRole=null;
+async function startApp(){
 
-  SESSIONS={};
-  DEFAULT_SESSION_PARTICIPANTS={};
-  RECORDS=[];
-  GAMES=[];
-  SESSION_PARTICIPANTS={};
-  PLAYERS=[];
+  if(TEST_MODE){
+    authLoading=false;
 
-  refreshSessionSelectors();
-  renderAll();
-  renderAdminAccess();
+    // Faux compte Admin uniquement local à CREWTEST
+    authUser={
+      email:"crewtest@local"
+    };
+    authRole="admin";
 
-  return;
-}
+    SESSIONS={};
+    DEFAULT_SESSION_PARTICIPANTS={};
+    RECORDS=[];
+    GAMES=[];
+    SESSION_PARTICIPANTS={};
+    PLAYERS=[];
+
+    // Affiche aussi l'onglet Saisie
+    const entryNav=document.querySelector('.nav[data-view="entry"]');
+    if(entryNav)entryNav.hidden=false;
+
+    refreshSessionSelectors();
+    initEntry();
+    renderAll();
+    renderAdminAccess();
+
+    return;
   }
 
   try{
     await loadFromSupabase();
   }catch(error){
     console.error("Crew'mong Us : impossible de charger les données Supabase.",error);
+
     const main=document.querySelector("main");
-    if(main)main.innerHTML=`<section class="view active"><article class="panel"><div class="section-title"><span class="section-icon">!</span><h2>Données indisponibles</h2></div><p>Impossible de charger les données depuis Supabase.</p></article></section>`;
+
+    if(main){
+      main.innerHTML=`
+        <section class="view active">
+          <article class="panel">
+            <div class="section-title">
+              <span class="section-icon">!</span>
+              <h2>Données indisponibles</h2>
+            </div>
+            <p>Impossible de charger les données depuis Supabase.</p>
+          </article>
+        </section>
+      `;
+    }
+
     return;
   }
 
