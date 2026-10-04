@@ -1,0 +1,873 @@
+const SUPABASE_URL="https://qonkgfbxmtmmwdjzyxuf.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY="sb_publishable_mwxOhhD8qUEU66MR5lziYw_441p5KRR";
+const AUTH_HASH_PARAMS=new URLSearchParams(window.location.hash.replace(/^#/,""));
+const AUTH_QUERY_PARAMS=new URLSearchParams(window.location.search);
+let authSetupRequested=["invite","recovery"].includes(AUTH_HASH_PARAMS.get("type"))||["invite","recovery"].includes(AUTH_QUERY_PARAMS.get("type"));
+const supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+let authUser=null;
+let authRole=null;
+let authLoading=true;
+
+const SABOTAGE_TYPES=["Oxygène","Réacteur","Lumières","Radio","Sismiques","Portes","Champignon"];
+let DELETED_SESSIONS=new Set();
+let SESSIONS={};
+let DEFAULT_SESSION_PARTICIPANTS={};
+let RECORDS=[],GAMES=[],SESSION_PARTICIPANTS={},PLAYERS=[];
+let currentScope=latestMonth(),currentPlayer="Bunny_Island",currentPlayerMonth=latestMonth(),currentPlayerMode="month",editingRecordKey=null;
+
+/* ===== Authentification et données Supabase ===== */
+
+async function refreshAdminAuth(sessionOverride=null){
+  authLoading=true;
+  authUser=sessionOverride?.user||null;
+  authRole=null;
+  renderAdminAccess();
+  try{
+    let session=sessionOverride;
+    if(!session){
+      const {data,error}=await supabaseClient.auth.getSession();
+      if(error)throw error;
+      session=data?.session||null;
+    }
+    authUser=session?.user||null;
+    if(authUser){
+      const {data,error}=await supabaseClient.from("user_roles").select("role").eq("user_id",authUser.id).maybeSingle();
+      if(error)throw error;
+      authRole=data?.role||null;
+    }
+  }catch(error){
+    console.error("Crew'mong Us : impossible de vérifier le rôle Admin.",error);
+    authUser=null;authRole=null;
+  }
+  authLoading=false;
+  renderAdminAccess();
+  renderAccountSetup();
+  syncEditorNavigation();
+  if(editorCanWrite())renderAdmin();
+}
+
+async function handleAdminLogin(){
+  const email=document.getElementById("admin-login-email")?.value.trim();
+  const password=document.getElementById("admin-login-password")?.value;
+  const status=document.getElementById("admin-auth-status");
+  if(!email||!password){
+    if(status)status.textContent="Renseigne l’adresse e-mail et le mot de passe.";
+    return;
+  }
+  if(status)status.textContent="Connexion…";
+  const {data,error}=await supabaseClient.auth.signInWithPassword({email,password});
+  if(error){
+    if(status)status.textContent="Connexion impossible : "+error.message;
+    return;
+  }
+  await refreshAdminAuth(data?.session||null);
+  if(!editorCanWrite()){
+    await supabaseClient.auth.signOut();
+    authUser=null;authRole=null;renderAdminAccess();syncEditorNavigation();
+    const s=document.getElementById("admin-auth-status");
+    if(s)s.textContent="Ce compte n’a pas de rôle Admin ou Helper.";
+  }
+}
+
+async function handlePasswordLink(){
+  const email=document.getElementById("admin-login-email")?.value.trim();
+  const status=document.getElementById("admin-auth-status");
+  if(!email){
+    if(status)status.textContent="Entre d’abord l’adresse e-mail du compte.";
+    return;
+  }
+  if(status)status.textContent="Envoi du lien…";
+  const redirectTo=window.location.origin+window.location.pathname;
+  const {error}=await supabaseClient.auth.resetPasswordForEmail(email,{redirectTo});
+  if(error){
+    if(status)status.textContent="Impossible d’envoyer le lien : "+error.message;
+    return;
+  }
+  if(status)status.textContent="Un lien pour définir ou réinitialiser le mot de passe a été envoyé par e-mail.";
+}
+
+async function handleAdminLogout(){
+  const {error}=await supabaseClient.auth.signOut({scope:"local"});
+  if(error){
+    const status=document.getElementById("admin-auth-status");
+    if(status)status.textContent="Déconnexion impossible : "+error.message;
+    return;
+  }
+  authUser=null;authRole=null;renderAdminAccess();renderAccountSetup();syncEditorNavigation();
+}
+
+function accountSetupNeeded(){
+  if(!authUser)return false;
+  const setupDone=authUser.user_metadata?.crew_setup_complete===true;
+  return !setupDone&&(authSetupRequested||!authRole);
+}
+
+function renderAccountSetup(){
+  const overlay=document.getElementById("account-setup-overlay");
+  const email=document.getElementById("account-setup-email");
+  if(!overlay)return;
+  const show=accountSetupNeeded();
+  overlay.hidden=!show;
+  if(show&&email)email.textContent=authUser?.email||"Compte invité";
+}
+
+async function handleAccountSetup(event){
+  event.preventDefault();
+  const password=document.getElementById("account-setup-password")?.value||"";
+  const confirmPassword=document.getElementById("account-setup-password-confirm")?.value||"";
+  const button=document.getElementById("account-setup-submit");
+  const status=document.getElementById("account-setup-status");
+
+  if(password.length<8){
+    if(status)status.textContent="Choisis un mot de passe d’au moins 8 caractères.";
+    return;
+  }
+  if(password!==confirmPassword){
+    if(status)status.textContent="Les deux mots de passe ne correspondent pas.";
+    return;
+  }
+
+  if(button)button.disabled=true;
+  if(status)status.textContent="Création du mot de passe…";
+
+  const {data,error}=await supabaseClient.auth.updateUser({
+    password,
+    data:{crew_setup_complete:true}
+  });
+
+  if(error){
+    if(status)status.textContent="Impossible de créer le mot de passe : "+error.message;
+    if(button)button.disabled=false;
+    return;
+  }
+
+  authUser=data?.user||authUser;
+  authSetupRequested=false;
+  history.replaceState(null,"",window.location.pathname);
+  if(status)status.textContent="Mot de passe créé. Ton compte est prêt.";
+  document.getElementById("account-setup-password").value="";
+  document.getElementById("account-setup-password-confirm").value="";
+
+  setTimeout(async()=>{
+    renderAccountSetup();
+    await refreshAdminAuth();
+    if(button)button.disabled=false;
+  },700);
+}
+
+function renderAdminAccess(){
+  const panel=document.getElementById("admin-auth-panel"),protectedBox=document.getElementById("admin-protected"),adminOnly=document.getElementById("admin-only-tools");
+  if(!panel||!protectedBox)return;
+  if(authLoading){
+    panel.innerHTML=`<h3>Accès Gestion</h3><p class="muted">Vérification de la session…</p>`;
+    protectedBox.hidden=true;
+    if(adminOnly)adminOnly.hidden=true;
+    return;
+  }
+  if(editorCanWrite()){
+    const isAdmin=authRole==="admin";
+    panel.innerHTML=`<div class="admin-auth-user"><div><h3>${isAdmin?"Administration":"Accès Helper"} déverrouillé${isAdmin?"":" "}</h3><p class="muted">Connecté avec <strong>${esc(authUser.email||"compte")}</strong> • rôle ${isAdmin?"Admin":"Helper"}${isAdmin?"":" • saisie et modification des fiches"}</p></div><button id="admin-logout-btn" class="secondary" type="button">Se déconnecter</button></div>`;
+    protectedBox.hidden=false;
+    if(adminOnly)adminOnly.hidden=!isAdmin;
+    document.getElementById("admin-logout-btn")?.addEventListener("click",handleAdminLogout);
+    return;
+  }
+  const message=authUser?"Ce compte n’a pas accès à la gestion.":"La consultation du site reste publique. Une connexion Admin ou Helper est nécessaire uniquement pour modifier les données.";
+  panel.innerHTML=`<h3>Accès Gestion</h3><p class="muted">${message}</p><form id="admin-login-form" class="admin-auth-form"><label>E-mail<input id="admin-login-email" type="email" autocomplete="username" required></label><label>Mot de passe<input id="admin-login-password" type="password" autocomplete="current-password" required></label><div class="admin-auth-actions"><button class="primary" type="submit">Se connecter</button><button id="admin-password-link" class="secondary" type="button">Définir / réinitialiser le mot de passe</button></div></form><span id="admin-auth-status" class="muted admin-auth-status"></span>`;
+  protectedBox.hidden=true;
+  if(adminOnly)adminOnly.hidden=true;
+  document.getElementById("admin-login-form")?.addEventListener("submit",e=>{e.preventDefault();handleAdminLogin()});
+  document.getElementById("admin-password-link")?.addEventListener("click",handlePasswordLink);
+}
+
+function editorCanWrite(){return (authRole==="admin"||authRole==="helper")&&!!authUser}
+function adminCanWrite(){return authRole==="admin"&&!!authUser}
+
+function syncEditorNavigation(){
+  const entryNav=document.querySelector('.nav[data-view="entry"]');
+  const entryView=document.getElementById("view-entry");
+  const canEdit=editorCanWrite();
+
+  if(entryNav)entryNav.hidden=!canEdit;
+
+  if(!canEdit&&entryView?.classList.contains("active")){
+    document.querySelectorAll(".nav").forEach(x=>x.classList.toggle("active",x.dataset.view==="admin"));
+    document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active",v.id==="view-admin"));
+    renderAdminAccess();
+  }
+}
+function requireEditor(){
+  return editorCanWrite();
+}
+function requireAdmin(){
+  if(adminCanWrite())return true;
+  const status=document.getElementById("admin-player-status");
+  if(status)status.textContent="Cette action est réservée aux comptes Admin.";
+  return false;
+}
+async function reloadPublicData(){
+  await loadFromSupabase();
+  refreshSessionSelectors();populateGameSelect();syncEntryPlayerOptions();refreshEventPlayerOptions();renderAll();
+  if(editorCanWrite())renderAdmin();
+}
+async function insertAdminPlayerToSupabase(player){
+  const {data,error}=await supabaseClient.from("players").insert({name:player.name,handle:player.handle,active:true,source:"admin"}).select("id,name,handle,active,source").single();
+  if(error)throw error;
+  return data;
+}
+async function updateAdminPlayerInSupabase(player){
+  const {data,error}=await supabaseClient.from("players").update({name:player.name,handle:player.handle,active:player.active!==false,updated_at:new Date().toISOString()}).eq("id",player.id).select("id,name,handle,active,source").single();
+  if(error)throw error;
+  return data;
+}
+async function toggleAdminPlayerInSupabase(player){
+  const {error}=await supabaseClient.from("players").update({active:player.active!==false,updated_at:new Date().toISOString()}).eq("id",player.id);
+  if(error)throw error;
+}
+async function deleteAdminPlayerInSupabase(player){
+  const {error}=await supabaseClient.rpc("delete_player",{p_player_id:player.id});
+  if(error)throw error;
+}
+
+async function adminCreateSessionInSupabase(session){
+  const {data,error}=await supabaseClient.rpc("admin_create_session",{
+    p_id:session.id,
+    p_date_label:session.date,
+    p_month:session.month,
+    p_label:session.label
+  });
+  if(error)throw error;
+  return data;
+}
+async function adminUpdateSessionInSupabase(oldId,newId,session){
+  const {data,error}=await supabaseClient.rpc("admin_update_session",{
+    p_old_id:oldId,
+    p_new_id:newId,
+    p_date_label:session.date,
+    p_month:session.month,
+    p_label:session.label
+  });
+  if(error)throw error;
+  return data;
+}
+async function adminDeleteSessionInSupabase(id){
+  const {error}=await supabaseClient.rpc("admin_delete_session",{p_session_id:id});
+  if(error)throw error;
+}
+async function adminSaveParticipantsInSupabase(session,names){
+  const playerIds=names.map(name=>PLAYERS.find(p=>p.name===name)?.id).filter(Boolean);
+  if(playerIds.length!==names.length)throw new Error("Un participant sélectionné est introuvable dans Supabase.");
+  const {error}=await supabaseClient.rpc("admin_save_participants",{
+    p_session_id:session,
+    p_player_ids:playerIds
+  });
+  if(error)throw error;
+}
+async function adminUpsertRecordInSupabase(payload){
+  const {data,error}=await supabaseClient.rpc("admin_upsert_record",payload);
+  if(error)throw error;
+  return data;
+}
+async function adminDeleteRecordInSupabase(id){
+  const {error}=await supabaseClient.rpc("admin_delete_record",{p_record_id:id});
+  if(error)throw error;
+}
+
+async function loadFromSupabase(){
+  const queries=await Promise.all([
+    supabaseClient.from("players").select("id,name,handle,active,source"),
+    supabaseClient.from("sessions").select("id,date_label,month,label"),
+    supabaseClient.from("games").select("id,session_id,game_number,map,winner,method,t1_deaths"),
+    supabaseClient.from("session_participants").select("session_id,player_id"),
+    supabaseClient.from("records").select("id,game_id,player_id,role,reports,self_reports,sabotage_count,sabotages,repair,kills,death,death_pos,turn,tasks,total_tasks,ejected,note")
+  ]);
+  const failed=queries.find(q=>q.error);
+  if(failed?.error) throw failed.error;
+
+  const [playersQ,sessionsQ,gamesQ,participantsQ,recordsQ]=queries;
+  const playerRows=playersQ.data||[];
+  const sessionRows=sessionsQ.data||[];
+  const gameRows=gamesQ.data||[];
+  const participantRows=participantsQ.data||[];
+  const recordRows=recordsQ.data||[];
+
+  if(!playerRows.length || !sessionRows.length || !gameRows.length || !recordRows.length){
+    throw new Error(
+      `Supabase a répondu avec des données incomplètes (joueurs: ${playerRows.length}, sessions: ${sessionRows.length}, games: ${gameRows.length}, fiches: ${recordRows.length}). Conservation de la sauvegarde locale.`
+    );
+  }
+
+  const playerById=new Map(playerRows.map(p=>[p.id,p.name]));
+  const gameById=new Map(gameRows.map(g=>[g.id,g]));
+
+  PLAYERS=playerRows.map(p=>({
+    id:p.id,
+    name:String(p.name),
+    handle:String(p.handle),
+    active:p.active!==false,
+    source:p.source||"integrated"
+  }));
+
+  SESSIONS=Object.fromEntries(sessionRows.map(s=>[
+    s.id,
+    {date:s.date_label,month:s.month,label:s.label}
+  ]));
+
+  GAMES=gameRows.map(g=>({
+    id:g.id,
+    session:g.session_id,
+    n:Number(g.game_number),
+    map:g.map,
+    winner:g.winner,
+    method:g.method,
+    t1Deaths:Number(g.t1_deaths||0)
+  }));
+
+  DEFAULT_SESSION_PARTICIPANTS=Object.fromEntries(
+    Object.keys(SESSIONS).map(id=>[id,[]])
+  );
+  SESSION_PARTICIPANTS=DEFAULT_SESSION_PARTICIPANTS;
+
+  participantRows.forEach(row=>{
+    const name=playerById.get(row.player_id);
+    if(name&&SESSION_PARTICIPANTS[row.session_id]){
+      SESSION_PARTICIPANTS[row.session_id].push(name);
+    }
+  });
+
+  RECORDS=recordRows.map(r=>{
+    const game=gameById.get(r.game_id);
+    const playerName=playerById.get(r.player_id);
+    if(!game||!playerName){
+      throw new Error("Une fiche Supabase référence une game ou un joueur introuvable.");
+    }
+    return {
+      id:r.id,
+      gameId:r.game_id,
+      session:game.session_id,
+      p:playerName,
+      g:Number(game.game_number),
+      role:r.role,
+      reports:Number(r.reports||0),
+      self:Number(r.self_reports||0),
+      sab:Number(r.sabotage_count||0),
+      sabotages:Array.isArray(r.sabotages)?r.sabotages:[],
+      repair:r.repair===null?null:Number(r.repair||0),
+      kills:Array.isArray(r.kills)?r.kills:[],
+      death:r.death,
+      deathPos:r.death_pos===null?null:Number(r.death_pos),
+      turn:r.turn===null?null:Number(r.turn),
+      tasks:r.tasks===null?null:Number(r.tasks),
+      totalTasks:r.total_tasks===null?null:Number(r.total_tasks),
+      ejected:r.ejected===true,
+      note:r.note||""
+    };
+  });
+
+  DELETED_SESSIONS=new Set();
+  console.info("Crew'mong Us : données chargées depuis Supabase.");
+}
+/* ===== Helpers de sessions et joueurs ===== */
+function sessionIds(){return Object.keys(SESSIONS).sort((a,b)=>b.localeCompare(a))}
+function availableMonths(){return [...new Set(sessionIds().map(id=>SESSIONS[id]?.month).filter(Boolean))].sort((a,b)=>b.localeCompare(a))}
+function latestMonth(){return availableMonths()[0]||"2026-09"}
+function monthLabel(ym){const [y,m]=String(ym).split("-").map(Number);if(!y||!m)return ym;return new Intl.DateTimeFormat("fr-FR",{month:"long",year:"numeric",timeZone:"UTC"}).format(new Date(Date.UTC(y,m-1,1))).replace(/^./,c=>c.toUpperCase())}
+function sessionMetaFromId(id){const [y,m,d]=id.split("-").map(Number),date=new Date(Date.UTC(y,m-1,d));return{date:new Intl.DateTimeFormat("fr-FR",{day:"numeric",month:"long",year:"numeric",timeZone:"UTC"}).format(date),month:id.slice(0,7),label:String(d).padStart(2,"0")+"/"+String(m).padStart(2,"0")+"/"+y}}
+function refreshSessionSelectors(){
+ const months=availableMonths(),ids=sessionIds();
+ const period=document.getElementById("period-select"),periodValue=currentScope==="all"?"all":(months.includes(currentScope)?currentScope:(months[0]||"all"));
+ period.innerHTML=months.map(m=>`<option value="${esc(m)}">${esc(monthLabel(m))}</option>`).join("")+`<option value="all">Stats globales</option>`;period.value=periodValue;currentScope=periodValue;
+ const sessionMonth=document.getElementById("session-month"),oldSessionMonth=sessionMonth.value;
+ sessionMonth.innerHTML=months.map(m=>`<option value="${esc(m)}">${esc(monthLabel(m))}</option>`).join("");sessionMonth.value=months.includes(oldSessionMonth)?oldSessionMonth:(months[0]||"");
+ const playerMonth=document.getElementById("player-month-select"),wantedPlayerMonth=months.includes(currentPlayerMonth)?currentPlayerMonth:(months[0]||"");
+ playerMonth.innerHTML=months.map(m=>`<option value="${esc(m)}">${esc(monthLabel(m))}</option>`).join("");playerMonth.value=wantedPlayerMonth;currentPlayerMonth=wantedPlayerMonth;
+ const formSession=document.getElementById("form-session"),oldForm=formSession.value;
+ formSession.innerHTML=ids.map(id=>`<option value="${esc(id)}">${esc(SESSIONS[id]?.label||id)}</option>`).join("");formSession.value=ids.includes(oldForm)?oldForm:(ids[0]||"");
+}
+function sortedPlayers(){return [...PLAYERS].sort((a,b)=>a.name.localeCompare(b.name,"fr",{sensitivity:"base"}))}
+function activePlayers(){return sortedPlayers().filter(p=>p.active!==false)}
+function playerIsUsed(name){return RECORDS.some(r=>r.p===name||r.kills?.includes(name))||Object.values(SESSION_PARTICIPANTS).some(names=>Array.isArray(names)&&names.includes(name))}
+function participantNamesForSession(session){const saved=SESSION_PARTICIPANTS[session];return Array.isArray(saved)?saved:[]}
+function participantsForSession(session){const allowed=new Set(participantNamesForSession(session));return sortedPlayers().filter(p=>allowed.has(p.name))}
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
+function pct(n,d){return d?(n/d*100).toFixed(1).replace(".",",")+" %":"0 %"}
+function gameFor(r){return GAMES.find(g=>g.session===r.session&&g.n===r.g)}
+function resultFor(r){const g=gameFor(r);return g&&((r.role==="Imposteur"&&g.winner==="Imposteurs")||(r.role==="Crew"&&g.winner==="Crewmates"))?"Victoire":"Défaite"}
+function gamesForScope(s){return s==="all"?[...GAMES]:GAMES.filter(g=>SESSIONS[g.session]?.month===s)}
+function recordsForScope(s){return s==="all"?[...RECORDS]:RECORDS.filter(r=>SESSIONS[r.session]?.month===s)}
+function favoriteFromList(list){const c={};(list||[]).filter(Boolean).forEach(s=>c[s]=(c[s]||0)+1);const vals=Object.values(c),max=vals.length?Math.max(...vals):0;if(!max)return null;const names=Object.entries(c).filter(([,n])=>n===max).map(([s])=>s);return{name:names.join(" / "),count:max}}
+function favoriteSabotage(records){return favoriteFromList(records.flatMap(r=>r.sabotages||[]))}
+function turnNumber(v){if(!v)return null;const m=String(v).match(/T(\d+)/);return m?Number(m[1]):null}
+
+function icon(name){
+ const paths={
+ crown:'<path d="M3 7l4 4 5-7 5 7 4-4-2 11H5L3 7z"/><path d="M6 21h12"/>',
+ star:'<path d="m12 2 3 6 7 .8-5 4.7 1.5 6.5L12 17l-6.5 3 1.5-6.5-5-4.7L9 8z"/>',
+ medal:'<circle cx="12" cy="9" r="5"/><path d="M9 14 7 22l5-3 5 3-2-8"/>',
+ users:'<circle cx="8" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M2 21c0-4 2-7 6-7s6 3 6 7M14 15c4 0 7 2 8 6"/>',
+ shield:'<path d="M12 3 4 6v6c0 5 3 8 8 10 5-2 8-5 8-10V6z"/><path d="m9 12 2 2 4-5"/>',
+ infinity:'<path d="M7 8c-3 0-5 2-5 4s2 4 5 4c4 0 6-8 10-8 3 0 5 2 5 4s-2 4-5 4c-4 0-6-8-10-8z"/>',
+ cone:'<path d="M8 20h8L13 4h-2z"/><path d="M5 20h14M9 14h6"/>',
+ eject:'<path d="M5 12h13"/><path d="m14 8 4 4-4 4"/><path d="M4 5h4v14H4"/>',
+ x:'<path d="M5 5l14 14M19 5 5 19"/>',
+ skull:'<circle cx="12" cy="10" r="7"/><path d="M9 10h.01M15 10h.01M9 16v4M12 17v3M15 16v4"/>',
+ fast:'<path d="m3 6 7 6-7 6zM11 6l7 6-7 6zM20 6v12"/>',
+ megaphone:'<path d="M3 11v2l11 4V7z"/><path d="M14 9h4l3-3v12l-3-3h-4M7 15l1 5h3"/>',
+ sad:'<circle cx="12" cy="12" r="9"/><path d="M9 9h.01M15 9h.01M8 17c2-3 6-3 8 0"/>',
+ chart:'<path d="M4 20V10M10 20V4M16 20v-7M22 20V7"/>',
+ crowd:'<circle cx="12" cy="7" r="3"/><circle cx="5" cy="10" r="2"/><circle cx="19" cy="10" r="2"/><path d="M7 21v-4c0-3 2-5 5-5s5 2 5 5v4M1 21v-3c0-2 1-4 4-4M23 21v-3c0-2-1-4-4-4"/>',
+ wrench:'<path d="M14 6a5 5 0 0 0-6 6L3 17l4 4 5-5a5 5 0 0 0 6-6l-3 3-4-4z"/>',
+ bolt:'<path d="M13 2 4 14h7l-1 8 9-13h-7z"/>',
+ map:'<path d="M3 6 9 3l6 3 6-3v15l-6 3-6-3-6 3z"/><path d="M9 3v15M15 6v15"/>',
+ duo:'<circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><path d="M2 21c0-4 2-7 6-7 2 0 3 .6 4 1.6M22 21c0-4-2-7-6-7-2 0-3 .6-4 1.6"/>',
+ repair:'<path d="M14 6a5 5 0 0 0-6 6L3 17l4 4 5-5a5 5 0 0 0 6-6l-3 3-4-4z"/>',
+ ghost:'<path d="M5 21V10a7 7 0 0 1 14 0v11l-3-2-2 2-2-2-2 2-2-2z"/><path d="M9 10h.01M15 10h.01"/>'
+ };
+ return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name]||paths.star}</svg>`;
+}
+function vrow(label,value,detail,icoName){return `<div class="vrow"><span class="ico">${icon(icoName)}</span><div><span class="vlabel">${esc(label)}</span><small>${esc(detail||"")}</small></div><strong>${esc(value)}</strong></div>`}
+function t1row(label,name,stat){return `<div class="t1mini"><div class="t1copy"><b class="t1label">${esc(label)}</b><strong class="t1name">${esc(name)}</strong><small class="t1stat">${esc(stat)}</small></div></div>`}
+function mentionRow(label,value,detail){return `<div class="mention-row"><div class="mention-copy"><b class="mention-label">${esc(label)}</b><small class="mention-detail">${esc(detail)}</small></div><strong class="mention-value">${esc(value)}</strong></div>`}
+
+/* navigation */
+document.querySelectorAll(".nav").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll(".nav").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));document.getElementById("view-"+b.dataset.view).classList.add("active");if(b.dataset.view==="admin"){renderAdminAccess();if(adminCanWrite())renderAdmin()}}));
+document.getElementById("period-select").addEventListener("change",e=>{currentScope=e.target.value;renderStats()});
+document.getElementById("session-month").addEventListener("change",renderSessions);
+document.getElementById("player-month-select").addEventListener("change",e=>{currentPlayerMonth=e.target.value;currentPlayerMode="month";renderPlayerTabs();renderPlayer()});
+
+/* ===== Rendu des pages ===== */
+function renderStats(){
+ const games=gamesForScope(currentScope),recs=recordsForScope(currentScope),all=currentScope==="all";
+ document.getElementById("scope-kicker").textContent=all?"STATS GLOBALES":"STATS DU MOIS";
+ document.getElementById("scope-title").textContent=all?"Toutes périodes":monthLabel(currentScope);
+ document.getElementById("scope-subtitle").textContent=all?"Toutes les sessions enregistrées.":"Toutes les sessions enregistrées pendant le mois.";
+ const iw=games.filter(g=>g.winner==="Imposteurs"),cw=games.filter(g=>g.winner==="Crewmates");
+ document.getElementById("impo-win-count").textContent=iw.length;document.getElementById("impo-win-pct").textContent=pct(iw.length,games.length);
+ document.getElementById("crew-win-count").textContent=cw.length;document.getElementById("crew-win-pct").textContent=pct(cw.length,games.length);
+ document.getElementById("impo-bar").style.width=(games.length?iw.length/games.length*100:0)+"%";document.getElementById("crew-bar").style.width=(games.length?cw.length/games.length*100:0)+"%";
+ const im=["Kills","Votes","Sabotage"].map(m=>[m,iw.filter(g=>g.method===m).length]);
+ const cr=[["Quêtes",cw.filter(g=>g.method==="Quêtes").length],["Votes",cw.filter(g=>g.method==="Votes").length]];
+ document.getElementById("impo-methods").innerHTML=im.map(([m,n])=>`<b>${m}</b> ${n} (${pct(n,iw.length)})`).join(" • ");
+ document.getElementById("crew-methods").innerHTML=`<b>Quêtes</b> ${cr[0][1]} (${pct(cr[0][1],cw.length)}) • <b>Élimination</b> ${cr[1][1]} (${pct(cr[1][1],cw.length)})`;
+
+ const tracked=sortedPlayers().map(p=>{const rr=recs.filter(r=>r.p===p.name),imp=rr.filter(r=>r.role==="Imposteur"),crew=rr.filter(r=>r.role==="Crew"),taskRows=crew.filter(r=>Number.isFinite(r.tasks)&&Number(r.totalTasks||9)>0),taskDone=taskRows.reduce((a,r)=>a+Number(r.tasks||0),0),taskTotal=taskRows.reduce((a,r)=>a+Number(r.totalTasks||9),0);return{name:p.name,rr,imp,crew,impWins:imp.filter(r=>resultFor(r)==="Victoire").length,crewWins:crew.filter(r=>resultFor(r)==="Victoire").length,impEjected:imp.filter(r=>r.ejected).length,crewEjected:crew.filter(r=>r.ejected).length,kills:rr.reduce((a,r)=>a+(r.kills?.length||0),0),maxKills:Math.max(0,...rr.map(r=>r.kills?.length||0)),t1:crew.filter(r=>r.turn===1).length,firstDeath:crew.filter(r=>r.deathPos===1).length,repairs:crew.reduce((a,r)=>a+(Number.isFinite(r.repair)?r.repair:0),0),taskGames:taskRows.length,taskDone,taskTotal,taskRate:taskTotal?taskDone/taskTotal:null}}).filter(x=>x.rr.length);
+ if(!tracked.length){document.getElementById("hall").innerHTML="";document.getElementById("shame").innerHTML="";document.getElementById("t1-rows").innerHTML="";document.getElementById("mentions").innerHTML="";document.getElementById("t1-average").textContent="0 Crewmate";return}
+ const impP=tracked.filter(x=>x.imp.length),crewP=tracked.filter(x=>x.crew.length),taskEligible=tracked.filter(x=>x.taskGames>=3&&x.taskRate!==null);
+ const bestTaskRate=taskEligible.length?Math.max(...taskEligible.map(x=>x.taskRate)):null,worstTaskRate=taskEligible.length?Math.min(...taskEligible.map(x=>x.taskRate)):null,bestTasks=taskEligible.filter(x=>x.taskRate===bestTaskRate),worstTasks=taskEligible.filter(x=>x.taskRate===worstTaskRate);
+ const maxIR=impP.length?Math.max(...impP.map(x=>x.impWins/x.imp.length)):0,iaot=impP.length?impP.filter(x=>x.impWins/x.imp.length===maxIR):[],mostIW=impP.length?[...impP].sort((a,b)=>b.impWins-a.impWins)[0]:null;
+ const maxCR=crewP.length?Math.max(...crewP.map(x=>x.crewWins/x.crew.length)):0,bestC=crewP.length?crewP.filter(x=>x.crewWins/x.crew.length===maxCR):[],mostIG=[...tracked].sort((a,b)=>b.imp.length-a.imp.length)[0];
+ const maxCS=Math.max(...tracked.map(x=>x.crew.length/x.rr.length)),career=tracked.filter(x=>x.crew.length/x.rr.length===maxCS),never=impP.filter(x=>x.impEjected===0);
+ document.getElementById("hall").innerHTML=[
+ vrow(all?"IAOT — Impo of all time":"Imposteur du mois",iaot.length?iaot.map(x=>x.name).join(", "):"Pas de données",iaot.length?`${pct(maxIR,1)} de victoires Imposteur`:"Aucun Imposteur enregistré","crown"),
+ vrow("Boss final",mostIW?mostIW.name:"Pas de données",mostIW?`${mostIW.impWins} victoire${mostIW.impWins>1?"s":""} en Imposteur`:"Aucune victoire Imposteur","star"),
+ vrow("Valeur sûre du Crew",bestC.length?bestC.map(x=>x.name).join(", "):"Pas de données",bestC.length?`${pct(maxCR,1)} de victoires Crew`:"Aucun Crew enregistré","medal"),
+ vrow("Abonné au côté obscur",mostIG.name,`${pct(mostIG.imp.length,mostIG.rr.length)} en Imposteur`,"users"),
+ vrow("Le Crewmate de carrière",career.map(x=>x.name).join(", "),`${pct(maxCS,1)} Crew`,"shield"),
+ vrow("Sous les radars",never.map(x=>x.name).join(", "),"0 éjection en Imposteur","infinity"),
+ vrow("Employé du mois",bestTasks.length?bestTasks.map(x=>x.name).join(", "):"Pas assez de données",bestTasks.length?bestTasks.map(x=>`${x.taskDone} quêtes`).join(" • "):"Minimum 3 games Crew","bolt")
+ ].join("");
+
+ const zero=impP.filter(x=>x.impWins===0),maxE=impP.length?Math.max(...impP.map(x=>x.impEjected)):0,sas=impP.length?impP.filter(x=>x.impEjected===maxE):[],maxER=impP.length?Math.max(...impP.map(x=>x.impEjected/x.imp.length)):0,mostE=impP.length?impP.filter(x=>x.impEjected/x.imp.length===maxER):[];
+ const maxT1=Math.max(...tracked.map(x=>x.t1)),ghost=tracked.filter(x=>x.t1===maxT1),maxFR=crewP.length?Math.max(...crewP.map(x=>x.firstDeath/x.crew.length)):0,express=crewP.length?crewP.filter(x=>x.firstDeath/x.crew.length===maxFR):[],maxCE=Math.max(...tracked.map(x=>x.crewEjected)),sus=tracked.filter(x=>x.crewEjected===maxCE&&maxCE>0),noCW=crewP.filter(x=>x.crewWins===0);
+ document.getElementById("shame").innerHTML=[
+ vrow("Impo en période d’essai",zero.length?zero.map(x=>x.name).join(", "):"Personne",zero.length?zero.map(x=>`${x.impWins} victoire${x.impWins>1?"s":""} sur ${x.imp.length} game${x.imp.length>1?"s":""} Imposteur`).join(" • "):"Aucun joueur concerné","cone"),
+ vrow("Abonné au SAS",sas.length?sas.map(x=>x.name).join(", "):"Personne",sas.length?`${maxE} éjection${maxE>1?"s":""} en Imposteur`:"Aucun joueur concerné","eject"),
+ vrow("VIP du SAS",mostE.length?mostE.map(x=>x.name).join(", "):"Personne",mostE.length?`${pct(maxER,1)} d’éjection en tant qu’Imposteur`:"Aucun joueur concerné","x"),
+ vrow("Fantôme ultime",ghost.map(x=>x.name).join(", "),`Mort en T1 ${maxT1} fois`,"ghost"),
+ vrow("Le départ express",express.length?express.map(x=>x.name).join(", "):"Personne",express.length?`Mort en premier ${express[0].firstDeath} fois • ${pct(maxFR,1)}`:"Aucun joueur concerné","fast"),
+ vrow("Accusé idéal",sus.length?sus.map(x=>x.name).join(", "):"Personne",sus.length?`${maxCE} éjection(s) en Crew`:"","megaphone"),
+ vrow("Soirée noire",noCW.length?noCW.map(x=>x.name).join(", "):"Personne",noCW.length?"0 victoire Crew":"Aucun joueur concerné","sad"),
+ vrow("Éternel vacancier",worstTasks.length?worstTasks.map(x=>x.name).join(", "):"Pas assez de données",worstTasks.length?worstTasks.map(x=>`${x.taskDone} quêtes`).join(" • "):"Minimum 3 games Crew","sad")
+ ].join("");
+
+ const avgT1=games.length?games.reduce((a,g)=>a+(g.t1Deaths||0),0)/games.length:0,maxDeaths=Math.max(0,...games.map(g=>g.t1Deaths||0)),maxTimes=games.filter(g=>(g.t1Deaths||0)===maxDeaths).length;
+ document.getElementById("t1-average").textContent=`${avgT1.toFixed(2).replace(".",",")} Crewmate${avgT1>1?"s":""}`;
+ const maxRisk=crewP.length?Math.max(...crewP.map(x=>x.t1/x.crew.length)):0,risk=crewP.length?crewP.filter(x=>x.t1/x.crew.length===maxRisk):[],noT1=crewP.filter(x=>x.t1===0);
+ document.getElementById("t1-rows").innerHTML=[
+ t1row("Mort le plus souvent",ghost.map(x=>x.name).join(", "),`${maxT1} fois`),
+ t1row("Taux de décès T1",risk.length?risk.map(x=>x.name).join(", "):"Pas de données",risk.length?`${pct(maxRisk,1)} de mort T1 • ${risk[0].t1}/${risk[0].crew.length} games Crew`:"Aucune game Crew"),
+ t1row("Maximum de kills",`${maxDeaths} morts`,`Record atteint ${maxTimes} fois`),
+ t1row("Aucun décès T1",noT1.length?noT1.map(x=>x.name).join(", "):"Personne",noT1.length?noT1.map(x=>`0/${x.crew.length}`).join(" • "):"")
+ ].join("");
+
+ const topKG=Math.max(...tracked.map(x=>x.maxKills)),topK=tracked.filter(x=>x.maxKills===topKG),bestRepair=Math.max(...tracked.map(x=>x.repairs)),repairers=tracked.filter(x=>x.repairs===bestRepair),favSab=favoriteSabotage(recs.filter(r=>r.role==="Imposteur"));
+ const mapStats={};games.forEach(g=>{mapStats[g.map]??={total:0,imp:0,crew:0};mapStats[g.map].total++;g.winner==="Imposteurs"?mapStats[g.map].imp++:mapStats[g.map].crew++});
+ const bestIM=Object.values(mapStats).length?Math.max(...Object.values(mapStats).map(x=>x.imp/x.total)):0,impMaps=Object.entries(mapStats).length?Object.entries(mapStats).filter(([,x])=>x.imp/x.total===bestIM):[],bestCM=Object.values(mapStats).length?Math.max(...Object.values(mapStats).map(x=>x.crew/x.total)):0,crewMaps=Object.entries(mapStats).length?Object.entries(mapStats).filter(([,x])=>x.crew/x.total===bestCM):[];
+ document.getElementById("mentions").innerHTML=[
+ mentionRow("Serial Killer",topK.map(x=>x.name).join(", "),`${topKG} kills en une game`),
+ mentionRow("SOS Dépannage",repairers.map(x=>x.name).join(", "),`${bestRepair} réparations au total`),
+ mentionRow("Sabotage préféré des Imposteurs",favSab?favSab.name:"Non renseigné",favSab?`${favSab.count} utilisations détaillées`:""),
+ mentionRow("Map préférée des Imposteurs",impMaps.length?impMaps.map(([m])=>m).join(" & "):"Pas de données",impMaps.length?`${pct(bestIM,1)} de victoires`:"Aucune game"),
+ mentionRow("Map la plus favorable au Crew",crewMaps.length?crewMaps.map(([m])=>m).join(" & "):"Pas de données",crewMaps.length?`${pct(bestCM,1)} de victoires`:"Aucune game")
+ ].join("");
+}
+
+function renderSessions(){
+ const month=document.getElementById("session-month").value,cards=document.getElementById("session-cards"),entries=Object.entries(SESSIONS).filter(([,s])=>s.month===month).sort((a,b)=>b[0].localeCompare(a[0]));
+ cards.innerHTML=entries.map(([id,s],i)=>`<button class="session-card ${i===0?"active":""}" data-id="${id}"><h3>${esc(s.date)}</h3><p>${GAMES.filter(g=>g.session===id).length} games enregistrées</p></button>`).join("");
+ cards.querySelectorAll(".session-card").forEach(b=>b.addEventListener("click",()=>{cards.querySelectorAll(".session-card").forEach(x=>x.classList.remove("active"));b.classList.add("active");renderSession(b.dataset.id)}));if(entries.length)renderSession(entries[0][0]);
+}
+function renderSession(id){const s=SESSIONS[id],games=GAMES.filter(g=>g.session===id).sort((a,b)=>a.n-b.n),iw=games.filter(g=>g.winner==="Imposteurs").length,cw=games.length-iw;document.getElementById("session-title").textContent=s.date;document.getElementById("session-summary").innerHTML=[["Games",games.length],["Wins Imposteurs",iw],["Wins Crew",cw],["Morts T1 / game",games.length?(games.reduce((a,g)=>a+(g.t1Deaths||0),0)/games.length).toFixed(2).replace(".",","):"0"],["Map la + jouée",mostCommon(games.map(g=>g.map))||"—"]].map(([a,b])=>`<div class="card"><span>${esc(a)}</span><strong>${esc(String(b))}</strong></div>`).join("");document.getElementById("session-games").innerHTML=games.map(g=>`<tr><td>${g.n}</td><td>${esc(g.map)}</td><td>${esc(g.winner)}</td><td>${esc(g.method)}</td><td>${g.t1Deaths||0}</td></tr>`).join("")}
+function mostCommon(arr){const c={};arr.forEach(v=>c[v]=(c[v]||0)+1);return Object.entries(c).sort((a,b)=>b[1]-a[1])[0]?.[0]}
+
+/* ===== Fiche joueur ===== */
+function renderPlayerList(){const box=document.getElementById("player-list");box.innerHTML=sortedPlayers().map(p=>{const has=RECORDS.some(r=>r.p===p.name);return `<button class="player-btn ${p.name===currentPlayer?"active":""}" data-p="${esc(p.name)}">${esc(p.name)}<span>@${esc(p.handle)}${has?" • données":" • aucune grille"}</span></button>`}).join("");box.querySelectorAll(".player-btn").forEach(b=>b.addEventListener("click",()=>{currentPlayer=b.dataset.p;currentPlayerMonth=latestMonth();currentPlayerMode="month";renderPlayerList();syncPlayerMonth();renderPlayerTabs();renderPlayer()}))}
+function syncPlayerMonth(){document.getElementById("player-month-select").value=currentPlayerMonth}
+function renderPlayerTabs(){const all=RECORDS.filter(r=>r.p===currentPlayer),ids=[...new Set(all.filter(r=>SESSIONS[r.session]?.month===currentPlayerMonth).map(r=>r.session))].sort((a,b)=>b.localeCompare(a)),box=document.getElementById("player-session-tabs");box.innerHTML=`<button class="tab ${currentPlayerMode==="month"?"active":""}" data-mode="month">Cumul du mois</button>`+ids.map(id=>`<button class="tab ${currentPlayerMode===id?"active":""}" data-mode="${id}">${esc(SESSIONS[id].label)}</button>`).join("")+`<button class="tab ${currentPlayerMode==="all"?"active":""}" data-mode="all">Cumul global</button>`;box.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>{currentPlayerMode=b.dataset.mode;renderPlayerTabs();renderPlayer()}))}
+function renderPlayer(){
+ const p=sortedPlayers().find(x=>x.name===currentPlayer);
+ if(!p){
+  document.getElementById("p-name").textContent="Aucun streamer";
+  const twitchLink=document.getElementById("p-handle");twitchLink.textContent="";twitchLink.removeAttribute("href");
+  document.getElementById("p-state").textContent="Aucun streamer enregistré";
+  document.getElementById("p-summary").innerHTML=`<div class="card"><span>Statut</span><strong>Aucune donnée</strong></div>`;
+  document.getElementById("p-stats").innerHTML="";document.getElementById("p-maps").innerHTML="";document.getElementById("p-sabotage").innerHTML="";document.getElementById("p-games").innerHTML="";
+  return;
+ }
+ const all=RECORDS.filter(r=>r.p===currentPlayer);let rr=currentPlayerMode==="all"?all:currentPlayerMode==="month"?all.filter(r=>SESSIONS[r.session]?.month===currentPlayerMonth):all.filter(r=>r.session===currentPlayerMode);
+ document.getElementById("p-name").textContent=p.name;const twitchLink=document.getElementById("p-handle");twitchLink.textContent="@"+p.handle+" ↗";twitchLink.href="https://www.twitch.tv/"+encodeURIComponent(p.handle);twitchLink.setAttribute("aria-label","Ouvrir la chaîne Twitch de "+p.name);document.getElementById("p-state").textContent=all.length?"Données présentes":"Aucune grille détaillée";
+ if(!all.length){document.getElementById("p-summary").innerHTML=`<div class="card"><span>Statut</span><strong>Pas de données</strong></div>`;document.getElementById("p-stats").innerHTML=`<div class="kv-item"><span>Info</span><strong>Aucune grille fournie dans cette démo.</strong></div>`;document.getElementById("p-maps").innerHTML="";document.getElementById("p-sabotage").innerHTML="";document.getElementById("p-games").innerHTML="";return}
+ const wins=rr.filter(r=>resultFor(r)==="Victoire").length,imp=rr.filter(r=>r.role==="Imposteur"),crew=rr.filter(r=>r.role==="Crew"),kills=rr.reduce((a,r)=>a+(r.kills?.length||0),0),reports=rr.reduce((a,r)=>a+(r.reports||0),0),repairs=crew.reduce((a,r)=>a+(Number.isFinite(r.repair)?r.repair:0),0),fav=favoriteSabotage(imp);
+ document.getElementById("p-summary").innerHTML=[["Games",rr.length],["Victoires",wins],["Kills",kills],["Reports",reports],["Réparations",repairs]].map(([a,b])=>`<div class="card"><span>${a}</span><strong>${b}</strong></div>`).join("");
+ document.getElementById("p-stats").innerHTML=[["Winrate global",pct(wins,rr.length)],["Winrate Crew",pct(crew.filter(r=>resultFor(r)==="Victoire").length,crew.length)],["Winrate Imposteur",pct(imp.filter(r=>resultFor(r)==="Victoire").length,imp.length)],["Part Crew",pct(crew.length,rr.length)],["Morts T1",crew.filter(r=>r.turn===1).length],["Éjections Crew",crew.filter(r=>r.ejected).length],["Éjections Imposteur",imp.filter(r=>r.ejected).length],["Sabotages",rr.reduce((a,r)=>a+(r.sab||0),0)]].map(([a,b])=>`<div class="kv-item"><span>${esc(a)}</span><strong>${esc(String(b))}</strong></div>`).join("");
+ const maps={};imp.forEach(r=>{const g=gameFor(r);if(g)maps[g.map]=(maps[g.map]||0)+1});document.getElementById("p-maps").innerHTML=Object.keys(maps).length?Object.entries(maps).map(([m,n])=>`<div class="map-row"><span>${esc(m)}</span><strong>${n}</strong></div>`).join(""):`<div class="map-row"><span>Aucune game en Imposteur</span><strong>0</strong></div>`;document.getElementById("p-sabotage").innerHTML=`<span>Sabotage préféré en Imposteur</span><strong>${esc(fav?fav.name:(imp.some(r=>(r.sab||0)>0)?"Non renseigné":"Aucun"))}</strong>`;
+ document.getElementById("p-games").innerHTML=rr.sort((a,b)=>a.g-b.g).map(r=>{const g=gameFor(r),killsText=r.role==="Imposteur"?(r.kills?.join(" → ")||"Aucun kill"):"—",sortie=r.ejected?"Éjecté":(r.role==="Crew"?(r.death||"Survit"):"Survit");return `<tr><td>${r.g}</td><td>${esc(g?.map||"—")}</td><td>${esc(r.role)}</td><td>${resultFor(r)}</td><td>${esc(g?.method||"—")}</td><td>${r.reports||0}</td><td>${r.self||0}</td><td>${r.sab||0}</td><td>${r.repair===null?"?":r.repair}</td><td>${esc(killsText)}</td><td>${esc(sortie)}</td><td>${r.role==="Crew"&&r.deathPos?`${r.deathPos}${r.deathPos===1?"er":"e"}`:"—"}</td><td>${r.turn?`T${r.turn}`:"—"}</td><td>${r.tasks===null?"—":`${r.tasks}/${r.totalTasks||9}`}</td><td>${esc(r.note||"")}</td></tr>`}).join("")
+}
+
+/* ===== Saisie d'une game ===== */
+function playerOptions(blank=false,session=null){const list=session?participantsForSession(session):activePlayers();return (blank?`<option value="">— Choisir —</option>`:"")+list.map(p=>`<option value="${esc(p.name)}">${esc(p.name)}</option>`).join("")}
+function currentEntrySession(){return document.getElementById("form-session").value}
+function syncEntryPlayerOptions(){const sel=document.getElementById("form-player"),old=sel.value;sel.innerHTML=playerOptions(false,currentEntrySession());if([...sel.options].some(o=>o.value===old))sel.value=old}
+function refreshEventPlayerOptions(){const session=currentEntrySession();document.querySelectorAll("#events-list .event-row").forEach(row=>{const type=row.querySelector(".ev-type")?.value,sel=row.querySelector(".ev-target");if(!sel)return;const old=sel.value;let html="";if(type==="kill"||type==="death")html=playerOptions(true,session);if(type==="report"||type==="self")html=`<option value="">Non renseigné</option>${playerOptions(false,session)}`;if(type==="eject")html=`<option>Personne</option>${playerOptions(false,session)}`;if(html){sel.innerHTML=html;if([...sel.options].some(o=>o.value===old))sel.value=old}})}
+function sabotageOptions(blank=false){return (blank?`<option value="">— Choisir —</option>`:"")+SABOTAGE_TYPES.map(s=>`<option>${esc(s)}</option>`).join("")}
+function populateGameSelect(){const session=document.getElementById("form-session").value,sel=document.getElementById("form-game"),nums=[...new Set(GAMES.filter(g=>g.session===session).map(g=>g.n))].sort((a,b)=>a-b);sel.innerHTML=nums.map(n=>`<option value="${n}">${n}</option>`).join("");if(!nums.length)sel.innerHTML='<option value="1">1</option>'}
+function initEntry(){syncEntryPlayerOptions();populateGameSelect();addEventRow();updateSabotageCount();syncWinnerFromResult();syncEntryRolePanels()}
+function ensureSelectValue(sel,value,label=value){if(value===null||value===undefined||value==="")return;if(![...sel.options].some(o=>o.value===String(value)))sel.insertAdjacentHTML("beforeend",`<option value="${esc(value)}">${esc(label)}</option>`);sel.value=String(value)}
+function eventTurnLabel(turn){return turn&&turn>=5?"T5+":`T${turn||1}`}
+function addEventRow(data={}){const el=document.createElement("div");el.className="dynamic-row event-row";el.innerHTML=`<label>Tour<select class="ev-turn"><option>T1</option><option>T2</option><option>T3</option><option>T4</option><option>T5+</option></select></label><label>Type<select class="ev-type"><option value="kill">Le streamer tue</option><option value="death">Le streamer meurt</option><option value="report">Report</option><option value="self">Self-report</option><option value="eject">Conseil / éjection</option></select></label><div class="dynamic-field"></div><button type="button" class="remove">×</button>`;document.getElementById("events-list").appendChild(el);el.querySelector(".ev-type").addEventListener("change",()=>renderEventDetail(el));el.querySelector(".remove").addEventListener("click",()=>el.remove());if(data.type)el.querySelector(".ev-type").value=data.type;el.querySelector(".ev-turn").value=eventTurnLabel(data.turn);renderEventDetail(el);const target=el.querySelector(".ev-target");if(target&&data.target){ensureSelectValue(target,data.target);target.value=data.target}const pos=el.querySelector(".ev-pos");if(pos&&data.pos)pos.value=String(data.pos)}
+function renderEventDetail(el){const t=el.querySelector(".ev-type").value,b=el.querySelector(".dynamic-field");if(t==="kill")b.innerHTML=`<label>Victime<select class="ev-target">${playerOptions(true,currentEntrySession())}</select></label>`;if(t==="death")b.innerHTML=`<div class="two-cols"><label>Tué par<select class="ev-target">${playerOptions(true,currentEntrySession())}</select></label><label>Ordre de mort<input class="ev-pos" type="number" min="1" max="10" placeholder="1, 2, 3…"></label></div>`;if(t==="report")b.innerHTML=`<label>Corps reporté<select class="ev-target"><option value="">Non renseigné</option>${playerOptions(false,currentEntrySession())}</select></label>`;if(t==="self")b.innerHTML=`<label>Victime self-report<select class="ev-target"><option value="">Non renseigné</option>${playerOptions(false,currentEntrySession())}</select></label>`;if(t==="eject")b.innerHTML=`<label>Joueur éjecté<select class="ev-target"><option>Personne</option>${playerOptions(false,currentEntrySession())}</select></label>`}
+function addSabotageRow(data={}){const r=document.createElement("div");r.className="dynamic-row sabotage-row";r.innerHTML=`<label>Tour<select class="sab-turn"><option>T1</option><option>T2</option><option>T3</option><option>T4</option><option>T5+</option></select></label><label>Sabotage<select class="sab-type">${sabotageOptions(false)}</select></label><button type="button" class="remove">×</button>`;document.getElementById("sabotages-list").appendChild(r);r.querySelector(".remove").addEventListener("click",()=>{r.remove();updateSabotageCount()});r.querySelector(".sab-type").addEventListener("change",updateFavoriteSuggestion);r.querySelector(".sab-turn").value=eventTurnLabel(data.turn);if(data.sabotage){const sel=r.querySelector(".sab-type");ensureSelectValue(sel,data.sabotage);sel.value=data.sabotage}updateSabotageCount()}
+function updateSabotageCount(){const n=document.querySelectorAll("#sabotages-list .sabotage-row").length;document.getElementById("sabotage-count").textContent=`${n} sabotage${n>1?"s":""}`;updateFavoriteSuggestion()}
+function updateFavoriteSuggestion(){const vals=[...document.querySelectorAll("#sabotages-list .sab-type")].map(x=>x.value),fav=favoriteFromList(vals),out=document.getElementById("favorite-sabotage-preview");if(out)out.textContent=fav?`${fav.name} (${fav.count})`:"Aucun"}
+function syncEntryRolePanels(){const crew=document.getElementById("form-role").value==="Crew";document.getElementById("crew-repair-panel").hidden=!crew;document.getElementById("impostor-sabotage-panel").hidden=crew}
+function changeRepair(delta){const input=document.getElementById("form-repairs"),next=Math.max(0,(Number(input.value)||0)+delta);input.value=String(next)}
+function syncWinnerFromResult(){const role=document.getElementById("form-role").value,res=document.getElementById("form-result").value;document.getElementById("form-winning-side").value=(res==="Victoire")?(role==="Crew"?"Crewmates":"Imposteurs"):(role==="Crew"?"Imposteurs":"Crewmates")}
+document.getElementById("form-role").addEventListener("change",()=>{syncWinnerFromResult();syncEntryRolePanels()});document.getElementById("form-result").addEventListener("change",syncWinnerFromResult);document.getElementById("add-event-btn").addEventListener("click",addEventRow);document.getElementById("add-sabotage-btn").addEventListener("click",addSabotageRow);document.getElementById("repair-minus").addEventListener("click",()=>changeRepair(-1));document.getElementById("repair-plus").addEventListener("click",()=>changeRepair(1));document.getElementById("form-session").addEventListener("change",()=>{populateGameSelect();syncEntryPlayerOptions();refreshEventPlayerOptions()});
+document.getElementById("new-game-btn").addEventListener("click",()=>{editingRecordKey=null;document.getElementById("save-entry-btn").textContent="Enregistrer la fiche";const session=document.getElementById("form-session").value,nums=GAMES.filter(g=>g.session===session).map(g=>g.n),next=Math.max(0,...nums)+1,sel=document.getElementById("form-game");if(![...sel.options].some(o=>Number(o.value)===next))sel.insertAdjacentHTML("beforeend",`<option value="${next}">${next}</option>`);sel.value=String(next);document.getElementById("events-list").innerHTML="";document.getElementById("sabotages-list").innerHTML="";document.getElementById("form-repairs").value="0";addEventRow();updateSabotageCount();document.getElementById("entry-status").textContent=`Game ${next} prête à être saisie.`});
+
+/* ===== Administration ===== */
+function editRecordFromAdmin(index){
+ const r=RECORDS[index];if(!r)return;
+ const g=gameFor(r);editingRecordKey={session:r.session,p:r.p,g:r.g};
+ const sessionSel=document.getElementById("form-session");ensureSelectValue(sessionSel,r.session,SESSIONS[r.session]?.label||r.session);sessionSel.value=r.session;
+ populateGameSelect();syncEntryPlayerOptions();
+ const playerSel=document.getElementById("form-player");ensureSelectValue(playerSel,r.p,r.p);playerSel.value=r.p;
+ const gameSel=document.getElementById("form-game");ensureSelectValue(gameSel,r.g,r.g);gameSel.value=String(r.g);
+ if(g){ensureSelectValue(document.getElementById("form-map"),g.map,g.map);document.getElementById("form-map").value=g.map;document.getElementById("form-winning-side").value=g.winner;document.getElementById("form-method").value=g.method}
+ document.getElementById("form-role").value=r.role;
+ document.getElementById("form-result").value=resultFor(r);
+ document.getElementById("form-ejected").value=r.ejected?"Oui":"Non";
+ document.getElementById("form-reports").value=String(r.reports||0);
+ document.getElementById("form-repairs").value=String(Number.isFinite(r.repair)?r.repair:0);
+ document.getElementById("form-tasks").value=String(r.tasks??0);
+ document.getElementById("form-note").value=r.note||"";
+ document.getElementById("events-list").innerHTML="";
+ (r.kills||[]).forEach(target=>addEventRow({type:"kill",target}));
+ const deathMatch=/^Tu(?:é|ée) par (.+)$/.exec(r.death||"");
+ if(deathMatch||((r.death||"")!=="Survit"&&!String(r.death||"").startsWith("Éjecté")&&r.death)){addEventRow({type:"death",turn:r.turn,target:deathMatch?.[1]||"",pos:r.deathPos})}
+ for(let i=0;i<(r.self||0);i++)addEventRow({type:"self"});
+ if(!document.querySelector("#events-list .event-row"))addEventRow();
+ document.getElementById("sabotages-list").innerHTML="";
+ (r.sabotages||[]).forEach(sabotage=>addSabotageRow({sabotage}));
+ updateSabotageCount();syncEntryRolePanels();refreshEventPlayerOptions();
+ document.getElementById("save-entry-btn").textContent="Enregistrer les modifications";
+ document.getElementById("entry-status").textContent=`Modification de ${r.p}, Game ${r.g} du ${SESSIONS[r.session]?.label||r.session}.`;
+ document.querySelectorAll(".nav").forEach(x=>x.classList.toggle("active",x.dataset.view==="entry"));
+ document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active",v.id==="view-entry"));
+ window.scrollTo({top:document.getElementById("view-entry").offsetTop-80,behavior:"smooth"});
+}
+document.getElementById("save-entry-btn").addEventListener("click",async()=>{
+  if(!requireEditor()){
+    document.getElementById("entry-status").textContent="Connecte-toi avec un compte Admin ou Helper pour enregistrer les données.";
+    return;
+  }
+  const saveButton=document.getElementById("save-entry-btn");
+  const session=document.getElementById("form-session").value,gnum=Number(document.getElementById("form-game").value),player=document.getElementById("form-player").value,role=document.getElementById("form-role").value;
+  const kills=[];let death="Survit",deathPos=null,deathTurn=null,self=0;
+  document.querySelectorAll("#events-list .event-row").forEach(r=>{const type=r.querySelector(".ev-type").value,turn=turnNumber(r.querySelector(".ev-turn").value),target=r.querySelector(".ev-target")?.value||"";if(type==="kill"&&target)kills.push(target);if(type==="death"){death=target?`Tué par ${target}`:"Mort";deathPos=Number(r.querySelector(".ev-pos")?.value)||null;deathTurn=turn}if(type==="self")self++});
+  const repairs=Math.max(0,Number(document.getElementById("form-repairs").value)||0);
+  const sabotages=role==="Imposteur"?[...document.querySelectorAll("#sabotages-list .sab-type")].map(x=>x.value):[];
+  const ejected=document.getElementById("form-ejected").value==="Oui";
+  if(ejected&&death==="Survit")death="Éjecté au conseil";
+  const winner=document.getElementById("form-winning-side").value,method=document.getElementById("form-method").value,map=document.getElementById("form-map").value;
+  const identityChanged=editingRecordKey&&(editingRecordKey.session!==session||editingRecordKey.p!==player||editingRecordKey.g!==gnum);
+  if(identityChanged&&RECORDS.some(r=>r.session===session&&r.p===player&&r.g===gnum)){alert("Une fiche existe déjà pour ce joueur dans cette game. Modifie-la directement depuis l’Admin.");return}
+  const existingRecord=editingRecordKey?RECORDS.find(r=>r.session===editingRecordKey.session&&r.p===editingRecordKey.p&&r.g===editingRecordKey.g):null;
+  const payload={
+    p_existing_record_id:existingRecord?.id||null,
+    p_session_id:session,
+    p_game_number:gnum,
+    p_player_name:player,
+    p_role:role,
+    p_reports:Number(document.getElementById("form-reports").value)||0,
+    p_self_reports:self,
+    p_sabotages:sabotages,
+    p_repair:role==="Crew"?repairs:0,
+    p_kills:role==="Imposteur"?kills:[],
+    p_death:death,
+    p_death_pos:deathPos,
+    p_turn:deathTurn,
+    p_tasks:role==="Crew"?(Number(document.getElementById("form-tasks").value)||0):null,
+    p_total_tasks:role==="Crew"?9:null,
+    p_ejected:ejected,
+    p_note:document.getElementById("form-note").value.trim(),
+    p_map:map,
+    p_winner:winner,
+    p_method:method
+  };
+  const wasEditing=!!editingRecordKey;
+  saveButton.disabled=true;
+  try{
+    await adminUpsertRecordInSupabase(payload);
+    editingRecordKey=null;
+    saveButton.textContent="Enregistrer la fiche";
+    await reloadPublicData();
+    document.getElementById("entry-status").textContent=`${wasEditing?"Modifié":"Enregistré"} : ${player}, Game ${gnum}. Les données sont enregistrées dans Supabase.`;
+  }catch(error){
+    document.getElementById("entry-status").textContent="Erreur Supabase : "+error.message;
+  }finally{saveButton.disabled=false}
+});
+
+async function addAdminSession(){
+  if(!requireAdmin())return;
+  const input=document.getElementById("admin-new-session-date"),status=document.getElementById("admin-session-status"),id=input.value;
+  if(!id){status.textContent="Choisis une date.";return}
+  if(SESSIONS[id]&&!DELETED_SESSIONS.has(id)){status.textContent="Cette session existe déjà.";return}
+  const meta=sessionMetaFromId(id);
+  try{
+    await adminCreateSessionInSupabase({id,date:meta.date,month:meta.month,label:meta.label});
+    await reloadPublicData();
+    document.getElementById("form-session").value=id;populateGameSelect();syncEntryPlayerOptions();refreshEventPlayerOptions();
+    const adminSel=document.getElementById("admin-participant-session");adminSel.value=id;renderAdminParticipants();
+    status.textContent=`Session du ${meta.label} ajoutée dans Supabase. Aucun membre n’est coché par défaut.`;
+  }catch(error){status.textContent="Erreur Supabase : "+error.message}
+}
+function renderAdminSessions(){
+ const box=document.getElementById("admin-sessions-list"),status=document.getElementById("admin-manage-session-status");
+ const ids=sessionIds();
+ box.innerHTML=ids.map(id=>{
+   const games=GAMES.filter(g=>g.session===id).length,records=RECORDS.filter(r=>r.session===id).length;
+   return `<div class="admin-session-row" data-session="${esc(id)}">
+     <div class="admin-session-main">
+       <strong>${esc(SESSIONS[id]?.date||id)}</strong>
+       <small>${games} game${games!==1?"s":""} • ${records} fiche${records!==1?"s":""}</small>
+     </div>
+     <label>Nouvelle date<input class="admin-session-edit-date" type="date" value="${esc(id)}"></label>
+     <div class="admin-session-actions">
+       <button type="button" class="secondary admin-session-edit">Modifier</button>
+       <button type="button" class="danger admin-session-delete">Supprimer</button>
+     </div>
+   </div>`;
+ }).join("");
+ box.querySelectorAll(".admin-session-edit").forEach(btn=>btn.addEventListener("click",()=>editAdminSession(btn.closest(".admin-session-row"))));
+ box.querySelectorAll(".admin-session-delete").forEach(btn=>btn.addEventListener("click",()=>deleteAdminSession(btn.closest(".admin-session-row"))));
+ if(!ids.length)box.innerHTML='<p class="muted">Aucune session enregistrée.</p>';
+ if(status&&!status.textContent)status.textContent="";
+}
+async function editAdminSession(row){
+  if(!requireAdmin())return;
+  const oldId=row.dataset.session,newId=row.querySelector(".admin-session-edit-date").value,status=document.getElementById("admin-manage-session-status");
+  if(!newId){status.textContent="Choisis une nouvelle date.";return}
+  if(newId===oldId){status.textContent="La date n’a pas changé.";return}
+  if(SESSIONS[newId]){status.textContent="Une session existe déjà à cette date.";return}
+  const meta=sessionMetaFromId(newId);
+  try{
+    await adminUpdateSessionInSupabase(oldId,newId,meta);
+    await reloadPublicData();
+    const adminSel=document.getElementById("admin-participant-session");
+    if([...adminSel.options].some(o=>o.value===newId)){adminSel.value=newId;renderAdminParticipants()}
+    status.textContent=`Session déplacée du ${oldId.split("-").reverse().join("/")} au ${meta.label} dans Supabase.`;
+  }catch(error){status.textContent="Erreur Supabase : "+error.message}
+}
+async function deleteAdminSession(row){
+  if(!requireAdmin())return;
+  const id=row.dataset.session,status=document.getElementById("admin-manage-session-status");
+  if(sessionIds().length<=1){status.textContent="Impossible de supprimer la dernière session.";return}
+  const games=GAMES.filter(g=>g.session===id).length,records=RECORDS.filter(r=>r.session===id).length;
+  const label=SESSIONS[id]?.label||id;
+  if(!confirm(`Supprimer définitivement la session du ${label} ?\n\nCela supprimera aussi ${games} game(s) et ${records} fiche(s) joueur associée(s).\n\nCette action est irréversible.`))return;
+  try{
+    await adminDeleteSessionInSupabase(id);
+    await reloadPublicData();
+    status.textContent=`Session du ${label} supprimée de Supabase.`;
+  }catch(error){status.textContent="Erreur Supabase : "+error.message}
+}
+function renderAdminParticipants(){
+ const sessionSel=document.getElementById("admin-participant-session"),list=document.getElementById("admin-participants-list");
+ const sessions=Object.entries(SESSIONS).sort((a,b)=>b[0].localeCompare(a[0]));
+ const old=sessionSel.value;
+ sessionSel.innerHTML=sessions.map(([id,s])=>`<option value="${esc(id)}">${esc(s.label||s.date||id)}</option>`).join("");
+ if(sessions.some(([id])=>id===old))sessionSel.value=old;
+ const selected=new Set(participantNamesForSession(sessionSel.value));
+ list.innerHTML=sortedPlayers().map(p=>{const inactive=p.active===false&&!selected.has(p.name);return `<label class="participant-check ${p.active===false?"inactive":""}"><input type="checkbox" value="${esc(p.name)}" ${selected.has(p.name)?"checked":""} ${inactive?"disabled":""}><span>${esc(p.name)}${p.active===false?" <small>(inactif)</small>":""}</span></label>`}).join("");
+}
+function clearAdminParticipants(){
+ document.querySelectorAll("#admin-participants-list input[type=\"checkbox\"]").forEach(x=>x.checked=false);
+ document.getElementById("admin-participants-status").textContent="Tous les participants ont été décochés. Clique sur Enregistrer pour valider.";
+}
+async function saveAdminParticipants(){
+  if(!requireAdmin())return;
+  const session=document.getElementById("admin-participant-session").value;
+  const names=[...document.querySelectorAll("#admin-participants-list input:checked")].map(x=>x.value);
+  const status=document.getElementById("admin-participants-status");
+  try{
+    await adminSaveParticipantsInSupabase(session,names);
+    await reloadPublicData();
+    if(currentEntrySession()===session){syncEntryPlayerOptions();refreshEventPlayerOptions()}
+    status.textContent=`${names.length} participant${names.length>1?"s":""} enregistré${names.length>1?"s":""} dans Supabase pour cette soirée.`;
+  }catch(error){status.textContent="Erreur Supabase : "+error.message}
+}
+function resetAdminPlayerForm(){
+ const name=document.getElementById("admin-player-name"),handle=document.getElementById("admin-player-handle"),button=document.getElementById("admin-add-player-btn"),cancel=document.getElementById("admin-cancel-player-edit"),status=document.getElementById("admin-player-status");
+ if(!name)return;
+ name.value="";handle.value="";name.disabled=false;button.textContent="+ Ajouter le streamer";cancel.hidden=true;delete button.dataset.editName;
+ if(status)status.textContent="";
+}
+function renderAdminPlayers(){
+ const list=document.getElementById("admin-players-list");
+ const status=document.getElementById("admin-player-status");
+ if(!list)return;
+ const players=sortedPlayers();
+  list.innerHTML=players.map(p=>{
+    const used=playerIsUsed(p.name);
+    const state=p.active===false?"Inactif":"Actif";
+    const stateClass=p.active===false?"inactive":"";
+    const toggleLabel=p.active===false?"Réactiver":"Désactiver";
+    const toggleClass=p.active===false?"primary":"secondary";
+    const deleteButton=`<button type="button" class="danger admin-player-delete" data-name="${esc(p.name)}">Supprimer</button>`;
+    return `<div class="admin-player-row ${stateClass}">
+      <div><strong>${esc(p.name)}</strong><small>@${esc(p.handle)} • ${state}${used?" • données utilisées":""}</small></div>
+      <div class="admin-player-actions">
+        <button type="button" class="secondary admin-player-edit" data-name="${esc(p.name)}">Modifier</button>
+        <button type="button" class="${toggleClass} admin-player-toggle" data-name="${esc(p.name)}">${toggleLabel}</button>
+        ${deleteButton}
+      </div>
+    </div>`;
+  }).join("");
+ list.querySelectorAll(".admin-player-edit").forEach(btn=>btn.addEventListener("click",()=>editAdminPlayer(btn.dataset.name)));
+ list.querySelectorAll(".admin-player-toggle").forEach(btn=>btn.addEventListener("click",()=>toggleAdminPlayer(btn.dataset.name)));
+ list.querySelectorAll(".admin-player-delete").forEach(btn=>btn.addEventListener("click",()=>deleteAdminPlayer(btn.dataset.name)));
+ if(!players.length)list.innerHTML='<p class="muted">Aucun streamer enregistré.</p>';
+ if(status&&!status.textContent)status.textContent="";
+}
+function editAdminPlayer(name){
+ const p=PLAYERS.find(x=>x.name===name),nameInput=document.getElementById("admin-player-name"),handleInput=document.getElementById("admin-player-handle"),button=document.getElementById("admin-add-player-btn"),cancel=document.getElementById("admin-cancel-player-edit"),status=document.getElementById("admin-player-status");
+ if(!p)return;
+ const used=playerIsUsed(p.name);
+ nameInput.value=p.name;handleInput.value=p.handle;nameInput.disabled=used;button.textContent="Enregistrer les modifications";button.dataset.editName=p.name;cancel.hidden=false;
+ status.textContent=used?"Ce streamer est déjà utilisé : son nom est verrouillé pour préserver les anciennes données.":"Modifie le nom ou le pseudo Twitch puis enregistre.";
+ nameInput.focus();
+}
+async function addAdminPlayer(){
+  if(!requireAdmin())return;
+  const nameInput=document.getElementById("admin-player-name"),handleInput=document.getElementById("admin-player-handle"),button=document.getElementById("admin-add-player-btn"),status=document.getElementById("admin-player-status");
+  const oldName=button.dataset.editName||"",name=nameInput.value.trim(),handle=handleInput.value.trim().replace(/^@+/,"");
+  if(!name||!handle){status.textContent="Renseigne le nom affiché et le pseudo Twitch.";return}
+  const exists=PLAYERS.some(p=>{const same=p.name.toLowerCase()===oldName.toLowerCase();return !same&&(p.name.toLowerCase()===name.toLowerCase()||p.handle.toLowerCase()===handle.toLowerCase())});
+  if(exists){status.textContent="Ce nom ou ce pseudo Twitch existe déjà.";return}
+  button.disabled=true;
+  try{
+    if(oldName){
+      const p=PLAYERS.find(x=>x.name===oldName);if(!p){resetAdminPlayerForm();return}
+      const used=playerIsUsed(oldName);
+      if(used&&name!==oldName){status.textContent="Impossible de renommer ce streamer car il est déjà utilisé dans des données.";return}
+      p.name=name;p.handle=handle;
+      const saved=await updateAdminPlayerInSupabase(p);
+      p.id=saved.id;p.source=saved.source||p.source||"integrated";
+      if(name!==oldName){
+        RECORDS.forEach(r=>{if(r.p===oldName)r.p=name;if(Array.isArray(r.kills))r.kills=r.kills.map(k=>k===oldName?name:k);if(typeof r.death==="string")r.death=r.death.split(oldName).join(name)});
+        Object.keys(SESSION_PARTICIPANTS).forEach(id=>{if(Array.isArray(SESSION_PARTICIPANTS[id]))SESSION_PARTICIPANTS[id]=SESSION_PARTICIPANTS[id].map(n=>n===oldName?name:n)});
+        if(currentPlayer===oldName)currentPlayer=name;
+      }
+      refreshSessionSelectors();syncEntryPlayerOptions();refreshEventPlayerOptions();renderAll();renderAdmin();resetAdminPlayerForm();
+      status.textContent=`${name} a été modifié dans Supabase.`;return;
+    }
+    const saved=await insertAdminPlayerToSupabase({name,handle,active:true});
+    PLAYERS.push({id:saved.id,name:saved.name,handle:saved.handle,active:saved.active,source:saved.source});
+    refreshSessionSelectors();syncEntryPlayerOptions();refreshEventPlayerOptions();renderAll();renderAdmin();resetAdminPlayerForm();
+    status.textContent=`${name} a été ajouté dans Supabase.`;
+  }catch(error){status.textContent="Erreur Supabase : "+error.message}
+  finally{button.disabled=false}
+}
+async function toggleAdminPlayer(name){
+  if(!requireAdmin())return;
+  const p=PLAYERS.find(x=>x.name===name),status=document.getElementById("admin-player-status");if(!p)return;
+  const previous=p.active;p.active=p.active===false;
+  try{
+    await toggleAdminPlayerInSupabase(p);refreshSessionSelectors();syncEntryPlayerOptions();refreshEventPlayerOptions();renderAll();renderAdmin();
+    status.textContent=p.active?`${name} est de nouveau actif.`:`${name} est maintenant inactif. Il reste visible dans l’historique.`;
+  }catch(error){p.active=previous;status.textContent="Erreur Supabase : "+error.message}
+}
+async function deleteAdminPlayer(name){
+  if(!requireAdmin())return;
+  const status=document.getElementById("admin-player-status"),p=PLAYERS.find(x=>x.name===name);if(!p)return;
+  const used=playerIsUsed(name);
+  const warning=used?`\\n\\nCette suppression retirera aussi ${name} de ses anciennes statistiques, parties et listes de participants. Les autres joueurs conserveront leurs données, mais les références à ${name} seront supprimées.\\n\\nCette action est irréversible. Continuer ?`:`\\n\\nSupprimer ${name} de la liste des streamers ?`;
+  if(!confirm(warning))return;
+  try{
+    await deleteAdminPlayerInSupabase(p);await reloadPublicData();
+    status.textContent=used?`${name} et ses données historiques ont été supprimés de Supabase.`:`${name} a été supprimé de Supabase.`;
+  }catch(error){status.textContent="Erreur Supabase : "+error.message}
+}
+
+function renderAdmin(){
+  if(!editorCanWrite()){renderAdminAccess();return}
+  const isAdmin=adminCanWrite();
+  const adminOnly=document.getElementById("admin-only-tools");
+  if(adminOnly)adminOnly.hidden=!isAdmin;
+  if(isAdmin){renderAdminPlayers();renderAdminSessions();renderAdminParticipants()}
+  const box=document.getElementById("admin-list"),sorted=[...RECORDS].sort((a,b)=>b.session.localeCompare(a.session)||b.g-a.g||a.p.localeCompare(b.p));
+  box.innerHTML=sorted.map(r=>{
+    const idx=RECORDS.indexOf(r),g=gameFor(r);
+    const deleteButton=isAdmin?`<button class="danger admin-delete-record" data-i="${idx}" type="button">Supprimer</button>`:"";
+    return `<div class="admin-item"><div><strong>${esc(r.p)} • ${esc(SESSIONS[r.session]?.label||r.session)} • Game ${r.g}</strong><small>${esc(g?.map||"—")} • ${esc(r.role)} • ${resultFor(r)}</small></div><div class="admin-item-actions"><button class="secondary admin-edit-record" data-i="${idx}" type="button">Modifier</button>${deleteButton}</div></div>`;
+  }).join("");
+  box.querySelectorAll(".admin-edit-record").forEach(b=>b.addEventListener("click",()=>editRecordFromAdmin(Number(b.dataset.i))));
+  if(isAdmin)box.querySelectorAll(".admin-delete-record").forEach(b=>b.addEventListener("click",()=>deleteAdminRecord(Number(b.dataset.i))));
+}
+async function deleteAdminRecord(index){
+  if(!requireAdmin())return;
+  const r=RECORDS[index];if(!r)return;
+  if(!confirm(`Supprimer la fiche de ${r.p}, Game ${r.g} du ${SESSIONS[r.session]?.label||r.session} ?\n\nCette action est irréversible.`))return;
+  try{
+    await adminDeleteRecordInSupabase(r.id);
+    await reloadPublicData();
+  }catch(error){
+    alert("Erreur Supabase : "+error.message);
+  }
+}
+
+document.getElementById("account-setup-form")?.addEventListener("submit",handleAccountSetup);
+supabaseClient.auth.onAuthStateChange((event,session)=>{
+  if(event==="PASSWORD_RECOVERY")authSetupRequested=true;
+  setTimeout(()=>refreshAdminAuth(session||null),0);
+});
+document.getElementById("admin-add-session-btn").addEventListener("click",addAdminSession);document.getElementById("admin-participant-session").addEventListener("change",renderAdminParticipants);document.getElementById("clear-participants-btn").addEventListener("click",clearAdminParticipants);document.getElementById("save-participants-btn").addEventListener("click",saveAdminParticipants);document.getElementById("admin-add-player-btn").addEventListener("click",addAdminPlayer);document.getElementById("admin-cancel-player-edit").addEventListener("click",resetAdminPlayerForm);
+document.getElementById("admin-reset").addEventListener("click",async()=>{if(!requireEditor())return;try{await reloadPublicData();const status=document.getElementById("admin-manage-session-status");if(status&&!status.closest("#admin-only-tools")?.hidden)status.textContent="Données rechargées depuis Supabase."}catch(error){alert("Erreur Supabase : "+error.message)}});
+/* ===== Initialisation et rendu global ===== */
+function renderAll(){renderStats();renderSessions();renderPlayerList();syncPlayerMonth();renderPlayerTabs();renderPlayer()}
+async function startApp(){
+  try{
+    await loadFromSupabase();
+  }catch(error){
+    console.error("Crew'mong Us : impossible de charger les données Supabase.",error);
+    const main=document.querySelector("main");
+    if(main)main.innerHTML=`<section class="view active"><article class="panel"><div class="section-title"><span class="section-icon">!</span><h2>Données indisponibles</h2></div><p>Impossible de charger les données depuis Supabase. Aucune sauvegarde locale n’est affichée afin d’éviter de présenter des données périmées.</p><p class="muted">Recharge la page dans quelques instants.</p></article></section>`;
+    return;
+  }
+  refreshSessionSelectors();
+  initEntry();
+  renderAll();
+  await refreshAdminAuth();
+}
+startApp();

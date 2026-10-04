@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#04101b">
+  <title>Crew’mong Us</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="account-setup-overlay" class="auth-setup-overlay" hidden>
+  <div class="glass-panel auth-setup-card" role="dialog" aria-modal="true" aria-labelledby="account-setup-title">
+    <div class="eyebrow">INVITATION CREW’MONG US</div>
+    <h2 id="account-setup-title">Finaliser ton compte</h2>
+    <p>Ton adresse e-mail est confirmée. Choisis maintenant le mot de passe qui servira à te connecter à Crew’mong Us.</p>
+    <p class="muted">Compte : <strong id="account-setup-email">—</strong></p>
+    <form id="account-setup-form" class="account-setup-form">
+      <label>Nouveau mot de passe
+        <input id="account-setup-password" type="password" autocomplete="new-password" minlength="8" required>
+      </label>
+      <label>Confirmer le mot de passe
+        <input id="account-setup-password-confirm" type="password" autocomplete="new-password" minlength="8" required>
+      </label>
+      <button id="account-setup-submit" class="primary" type="submit">Créer mon mot de passe</button>
+    </form>
+    <span id="account-setup-status" class="muted auth-setup-status"></span>
+  </div>
+</div>
+<div class="page-stars"></div>
+
+<header class="visual-hero">
+  <img src="assets/banner_crewmongus.png" alt="Crew’mong Us — Statistiques du mois, sessions et joueurs">
+</header>
+
+<nav class="top-nav" aria-label="Navigation principale">
+  <button class="nav active" data-view="stats"><span>▥</span>Stats</button>
+  <button class="nav" data-view="sessions"><span>▦</span>Sessions</button>
+  <button class="nav" data-view="players"><span>♟</span>Joueurs</button>
+  <button class="nav" data-view="entry" hidden><span>✎</span>Saisie</button>
+  <button class="nav" data-view="admin"><span>⚙</span>Gestion</button>
+</nav>
+
+<main class="shell">
+  <section id="view-stats" class="view active">
+    <div class="period-toolbar glass-panel">
+      <div>
+        <div class="eyebrow" id="scope-kicker">STATS DU MOIS</div>
+        <h1 id="scope-title">Septembre 2026</h1>
+        <p id="scope-subtitle">Toutes les sessions enregistrées pendant le mois.</p>
+      </div>
+      <label>Période
+        <select id="period-select">
+          <option value="2026-09">Septembre 2026</option>
+          <option value="all">Stats globales</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="visual-grid">
+      <article class="visual-card visual-win" aria-label="Taux de win">
+        <img src="assets/panel_win.png" alt="" aria-hidden="true">
+        <div class="win-overlay">
+          <div class="win-stat imp-row">
+           <div>
+    <span class="win-label">Victoires Imposteurs</span>
+    <div id="impo-methods" class="method-inline"></div>
+</div>>
+            <div class="win-score"><strong id="impo-win-count">0</strong><b id="impo-win-pct">0 %</b></div>
+          </div>
+         <div class="win-stat crew-row">
+    <div>
+        <span class="win-label">Victoires Crewmates</span>
+        <div id="crew-methods" class="method-inline"></div>
+    </div>
+
+    <div class="win-score">
+        <strong id="crew-win-count">0</strong>
+        <b id="crew-win-pct">0 %</b>
+    </div>
+</div>
+          <div class="winbar"><div id="impo-bar"></div><div id="crew-bar"></div></div>
+        </div>
+      </article>
+
+      <article class="visual-card visual-hall" aria-label="Hall of Fame">
+        <img src="assets/panel_hall.png" alt="" aria-hidden="true">
+        <div id="hall" class="visual-rows hall-rows"></div>
+      </article>
+
+      <article class="visual-card visual-shame" aria-label="Wall of Shame">
+        <img src="assets/panel_shame.png" alt="" aria-hidden="true">
+        <div id="shame" class="visual-rows shame-rows"></div>
+      </article>
+
+      <article class="visual-card visual-t1" aria-label="Avant le premier conseil">
+        <img src="assets/panel_t1.png" alt="" aria-hidden="true">
+        <div class="t1-feature">
+          <span>L’équipage perd en moyenne</span>
+          <strong id="t1-average">0 Crewmate</strong>
+          <small>avant le premier conseil</small>
+        </div>
+        <div id="t1-rows" class="t1-mini-grid"></div>
+      </article>
+
+      <article class="visual-card visual-mentions" aria-label="Mentions honorables">
+        <img src="assets/panel_mentions.png" alt="" aria-hidden="true">
+        <div class="mentions-title">Mentions honorables</div>
+        <div id="mentions" class="visual-rows mention-rows"></div>
+      </article>
+    </div>
+  </section>
+
+  <section id="view-sessions" class="view">
+    <article class="glass-panel content-panel">
+      <div class="section-head">
+        <div>
+          <div class="section-title"><span class="section-icon">▦</span><h2>Sessions</h2></div>
+          <p>Choisis un mois : toutes les soirées de ce mois apparaissent dessous.</p>
+        </div>
+        <label>Mois
+          <select id="session-month"><option value="2026-09">Septembre 2026</option></select>
+        </label>
+      </div>
+      <div id="session-cards" class="session-cards"></div>
+    </article>
+
+    <article class="glass-panel content-panel gap-top">
+      <div class="section-head">
+        <div><div class="eyebrow">SESSION</div><h2 id="session-title">28 septembre 2026</h2></div>
+        <span class="pill">Crew’mong Us</span>
+      </div>
+      <div id="session-summary" class="summary"></div>
+      <div class="subpanel">
+        <h3>Résultat des games</h3>
+        <div class="table-wrap"><table><thead><tr><th>Game</th><th>Map</th><th>Camp gagnant</th><th>Méthode</th><th>Morts T1</th></tr></thead><tbody id="session-games"></tbody></table></div>
+      </div>
+    </article>
+  </section>
+
+  <section id="view-players" class="view">
+    <div class="player-layout">
+      <aside class="glass-panel content-panel sidebar">
+        <div class="section-title"><span class="section-icon">♟</span><h2>Participants</h2></div>
+        <div id="player-list"></div>
+      </aside>
+      <article class="glass-panel content-panel player-card">
+        <div class="player-top">
+          <div><div class="eyebrow">FICHE JOUEUR</div><h2 id="p-name">Bunny_Island</h2><a id="p-handle" class="player-twitch-link" href="https://www.twitch.tv/_bunny_island_" target="_blank" rel="noopener noreferrer">@_bunny_island_ ↗</a></div>
+          <span id="p-state" class="pill">Données présentes</span>
+        </div>
+        <div class="player-period-bar">
+          <label>Mois<select id="player-month-select"><option value="2026-09">Septembre 2026</option></select></label>
+          <span>Choisis ensuite le cumul du mois, une soirée précise ou le cumul global.</span>
+        </div>
+        <div id="player-session-tabs" class="tabs"></div>
+        <div id="p-summary" class="summary"></div>
+        <div class="two-cols">
+          <div class="subpanel"><h3>Statistiques</h3><div id="p-stats" class="kv"></div></div>
+          <div class="subpanel"><h3>Imposteur : maps & sabotages</h3><div id="p-maps" class="map-list"></div><div id="p-sabotage" class="favorite-box"></div></div>
+        </div>
+        <div class="subpanel gap-top"><h3>Games</h3><div class="table-wrap"><table class="wide-table"><thead><tr><th>Game</th><th>Map</th><th>Rôle</th><th>Résultat</th><th>Fin</th><th>Reports</th><th>Self</th><th>Sabotages</th><th>Réparations</th><th>Kills</th><th>Sortie</th><th>Ordre de mort</th><th>Tour</th><th>Quêtes</th><th>Note</th></tr></thead><tbody id="p-games"></tbody></table></div></div>
+      </article>
+    </div>
+  </section>
+
+  <section id="view-entry" class="view">
+    <article class="glass-panel content-panel">
+      <div class="section-head">
+        <div><div class="section-title"><span class="section-icon">✎</span><h2>Saisie d’une game</h2></div><p>Chaque fiche peut contenir plusieurs événements et plusieurs sabotages. Enregistrer met à jour les données partagées dans Supabase.</p></div>
+        <button id="new-game-btn" class="primary">+ Nouvelle game</button>
+      </div>
+      <div class="form-grid cols4">
+        <label>Streamer<select id="form-player"></select></label>
+        <label>Session<select id="form-session"><option value="2026-09-28">28/09/2026</option></select></label>
+        <label>Game<select id="form-game"></select></label>
+        <label>Map<select id="form-map"><option>The Fungle</option><option>Polus</option><option>MIRA HQ</option><option>The Skeld</option></select></label>
+      </div>
+      <div class="form-grid cols4">
+        <label>Rôle<select id="form-role"><option>Crew</option><option>Imposteur</option></select></label>
+        <label>Résultat<select id="form-result"><option>Victoire</option><option>Défaite</option></select></label>
+        <label>Éjecté<select id="form-ejected"><option>Non</option><option>Oui</option></select></label>
+        <label>Reports du streamer<input id="form-reports" type="number" min="0" value="0"></label>
+      </div>
+      <div class="two-cols entry-cols">
+        <div class="subpanel">
+          <div class="subpanel-head"><div><h3>Événements</h3><p>Kills, mort du streamer, report, self-report, conseil… autant de lignes que nécessaire.</p></div><button id="add-event-btn" class="secondary" type="button">+ Ajouter</button></div>
+          <div id="events-list" class="dynamic-list"></div>
+        </div>
+        <div class="entry-role-stack">
+          <div id="crew-repair-panel" class="subpanel role-panel">
+            <div class="subpanel-head"><div><h3>Réparations de sabotage</h3><p>Nombre total de sabotages réparés par le Crew dans cette game.</p></div></div>
+            <div class="repair-counter" aria-label="Nombre de réparations">
+              <button id="repair-minus" class="secondary" type="button" aria-label="Retirer une réparation">−</button>
+              <input id="form-repairs" type="number" min="0" value="0" readonly>
+              <button id="repair-plus" class="secondary" type="button" aria-label="Ajouter une réparation">+</button>
+            </div>
+          </div>
+          <div id="impostor-sabotage-panel" class="subpanel role-panel" hidden>
+            <div class="subpanel-head"><div><h3>Sabotages</h3><p><span id="sabotage-count">0 sabotage</span> enregistré dans cette game. Le favori est calculé automatiquement.</p></div><button id="add-sabotage-btn" class="secondary" type="button">+ Ajouter</button></div>
+            <div id="sabotages-list" class="dynamic-list"></div>
+            <div class="favorite-box favorite-auto"><span>Sabotage le plus utilisé</span><strong id="favorite-sabotage-preview">Aucun</strong></div>
+          </div>
+        </div>
+      </div>
+      <div class="subpanel gap-top">
+        <h3>Fin de game</h3>
+        <div class="form-grid cols4 no-bottom">
+          <label>Camp gagnant<select id="form-winning-side"><option>Imposteurs</option><option>Crewmates</option></select></label>
+          <label>Méthode<select id="form-method"><option>Kills</option><option>Votes</option><option>Sabotage</option><option>Quêtes</option></select></label>
+          <label>Quêtes terminées<div class="task-input"><input id="form-tasks" type="number" min="0" max="9" value="0"><span>/ 9</span></div></label>
+          <label>Note<input id="form-note" placeholder="Détail utile ou humiliation mémorable"></label>
+        </div>
+      </div>
+      <div class="save-row"><button id="save-entry-btn" class="primary" type="button">Enregistrer la fiche</button><span id="entry-status"></span></div>
+    </article>
+  </section>
+
+  <section id="view-admin" class="view">
+    <article class="glass-panel content-panel">
+      <div class="section-head">
+        <div><div class="section-title"><span class="section-icon">⚙</span><h2>Gestion</h2></div><p>Connexion Admin ou Helper. Les Helpers peuvent saisir et modifier les fiches ; les réglages structurels restent réservés aux Admins.</p></div>
+        <button id="admin-reset" class="secondary">Recharger les données</button>
+      </div>
+      <div id="admin-auth-panel" class="subpanel admin-auth-panel"></div>
+      <div id="admin-protected">
+      <div id="admin-only-tools">
+      <div class="subpanel admin-session-create">
+        <div class="subpanel-head">
+          <div>
+            <h3>Ajouter une session</h3>
+            <p>Crée une nouvelle soirée à partir de sa date. Elle sera ensuite disponible dans Sessions, Saisie et la sélection des participants.</p>
+          </div>
+          <button id="admin-add-session-btn" class="primary" type="button">+ Ajouter</button>
+        </div>
+        <label class="admin-session-date">Date
+          <input id="admin-new-session-date" type="date">
+        </label>
+        <span id="admin-session-status" class="muted"></span>
+      </div>
+      <div class="subpanel admin-session-manage gap-top">
+        <div class="subpanel-head">
+          <div>
+            <h3>Gérer les sessions</h3>
+            <p>Corrige la date d’une soirée ou supprime-la en cas d’erreur. Modifier la date conserve les games, fiches et participants associés.</p>
+          </div>
+        </div>
+        <div id="admin-sessions-list" class="admin-sessions-list"></div>
+        <span id="admin-manage-session-status" class="muted"></span>
+      </div>
+      <div class="subpanel admin-participants-panel gap-top">
+        <div class="subpanel-head">
+          <div>
+            <h3>Participants de la soirée</h3>
+            <p>Seuls les membres cochés apparaîtront dans la saisie de cette session. La page Joueurs garde tous les membres du Crew.</p>
+          </div>
+          <div class="participant-actions"><button id="clear-participants-btn" class="secondary" type="button">Tout décocher</button><button id="save-participants-btn" class="primary" type="button">Enregistrer</button></div>
+        </div>
+        <label class="admin-session-select">Session
+          <select id="admin-participant-session"></select>
+        </label>
+        <div id="admin-participants-list" class="participant-grid"></div>
+        <span id="admin-participants-status" class="muted"></span>
+      </div>
+      <div class="subpanel admin-players-panel gap-top">
+        <div class="subpanel-head">
+          <div>
+            <h3>Gérer les streamers</h3>
+            <p>Ajoute les membres du Crew qui pourront ensuite être sélectionnés dans la saisie et apparaître dans la page Joueurs.</p>
+          </div>
+        </div>
+        <div class="admin-player-form">
+          <label>Nom affiché
+            <input id="admin-player-name" type="text" placeholder="NouveauStreamer" maxlength="40">
+          </label>
+          <label>Pseudo Twitch
+            <input id="admin-player-handle" type="text" placeholder="nouveau_streamer" maxlength="40">
+          </label>
+          <button id="admin-add-player-btn" class="primary" type="button">+ Ajouter le streamer</button>
+          <button id="admin-cancel-player-edit" class="secondary" type="button" hidden>Annuler</button>
+        </div>
+        <span id="admin-player-status" class="muted"></span>
+        <div id="admin-players-list" class="admin-players-list"></div>
+      </div>
+      </div>
+      <div class="subpanel gap-top">
+        <div class="subpanel-head">
+          <div>
+            <h3>Fiches enregistrées</h3>
+            <p>Les Admins peuvent modifier ou supprimer les fiches. Les Helpers peuvent les modifier, mais pas les supprimer.</p>
+          </div>
+        </div>
+        <div id="admin-list" class="admin-list"></div>
+      </div>
+      </div>
+    </article>
+  </section>
+</main>
+<footer>Crew’mong Us • statistiques, sessions et joueurs.</footer>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="app.js"></script>
+</body>
+</html>
