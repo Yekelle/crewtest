@@ -1046,10 +1046,27 @@ async function editAdminSession(row){
 async function deleteAdminSession(row){
   if(!requireAdmin())return;
   const id=row.dataset.session,status=document.getElementById("admin-manage-session-status");
-  if(sessionIds().length<=1){status.textContent="Impossible de supprimer la dernière session.";return}
   const games=GAMES.filter(g=>g.session===id).length,records=RECORDS.filter(r=>r.session===id).length;
   const label=SESSIONS[id]?.label||id;
   if(!confirm(`Supprimer définitivement la session du ${label} ?\n\nCela supprimera aussi ${games} game(s) et ${records} fiche(s) joueur associée(s).\n\nCette action est irréversible.`))return;
+
+  if(TEST_MODE){
+    const removedGameIds=new Set(GAMES.filter(g=>g.session===id).map(g=>g.id));
+    GAMES=GAMES.filter(g=>g.session!==id);
+    RECORDS=RECORDS.filter(r=>r.session!==id&&!removedGameIds.has(r.gameId));
+    delete SESSION_PARTICIPANTS[id];
+    delete SESSIONS[id];
+    for(const [fp,info] of Object.entries(TEST_IMPORTS)){
+      if(info?.sessionId===id)delete TEST_IMPORTS[fp];
+    }
+    DEFAULT_SESSION_PARTICIPANTS=Object.fromEntries(Object.keys(SESSIONS).map(sid=>[sid,[]]));
+    crewtestSaveState();
+    crewtestRefreshAll();
+    status.textContent=`Session du ${label} supprimée de CREWTEST.`;
+    return;
+  }
+
+  if(sessionIds().length<=1){status.textContent="Impossible de supprimer la dernière session.";return}
   try{
     await adminDeleteSessionInSupabase(id);
     await reloadPublicData();
@@ -1193,6 +1210,29 @@ async function deleteAdminRecord(index){
   if(!requireAdmin())return;
   const r=RECORDS[index];if(!r)return;
   if(!confirm(`Supprimer la fiche de ${r.p}, Game ${r.g} du ${SESSIONS[r.session]?.label||r.session} ?\n\nCette action est irréversible.`))return;
+
+  if(TEST_MODE){
+    const gameId=r.gameId;
+    RECORDS.splice(index,1);
+
+    const stillHasRecords=RECORDS.some(x=>x.gameId===gameId);
+    if(!stillHasRecords){
+      const game=GAMES.find(g=>g.id===gameId);
+      if(game?.fingerprint){
+        delete TEST_IMPORTS[game.fingerprint];
+      }else{
+        for(const [fp,info] of Object.entries(TEST_IMPORTS)){
+          if(info?.sessionId===r.session&&Number(info?.gameNumber)===Number(r.g))delete TEST_IMPORTS[fp];
+        }
+      }
+      GAMES=GAMES.filter(g=>g.id!==gameId);
+    }
+
+    crewtestSaveState();
+    crewtestRefreshAll(r.session);
+    return;
+  }
+
   try{
     await adminDeleteRecordInSupabase(r.id);
     await reloadPublicData();
@@ -1209,7 +1249,21 @@ if(!TEST_MODE){
   });
 }
 document.getElementById("admin-add-session-btn").addEventListener("click",addAdminSession);document.getElementById("admin-participant-session").addEventListener("change",renderAdminParticipants);document.getElementById("clear-participants-btn").addEventListener("click",clearAdminParticipants);document.getElementById("save-participants-btn").addEventListener("click",saveAdminParticipants);document.getElementById("admin-add-player-btn").addEventListener("click",addAdminPlayer);document.getElementById("admin-cancel-player-edit").addEventListener("click",resetAdminPlayerForm);
-document.getElementById("admin-reset").addEventListener("click",async()=>{if(!requireEditor())return;try{await reloadPublicData();const status=document.getElementById("admin-manage-session-status");if(status&&!status.closest("#admin-only-tools")?.hidden)status.textContent="Données rechargées depuis Supabase."}catch(error){alert("Erreur Supabase : "+error.message)}});
+document.getElementById("admin-reset").addEventListener("click",async()=>{
+  if(!requireEditor())return;
+  if(TEST_MODE){
+    crewtestLoadState();
+    crewtestRefreshAll();
+    const status=document.getElementById("admin-manage-session-status");
+    if(status&&!status.closest("#admin-only-tools")?.hidden)status.textContent="Données locales CREWTEST rechargées.";
+    return;
+  }
+  try{
+    await reloadPublicData();
+    const status=document.getElementById("admin-manage-session-status");
+    if(status&&!status.closest("#admin-only-tools")?.hidden)status.textContent="Données rechargées depuis Supabase.";
+  }catch(error){alert("Erreur Supabase : "+error.message)}
+});
 /* ===== Initialisation et rendu global ===== */
 function renderAll(){renderStats();renderSessions();renderPlayerList();syncPlayerMonth();renderPlayerTabs();renderPlayer()}
 async function startApp(){
