@@ -866,41 +866,24 @@ document.getElementById("admin-reset").addEventListener("click",async()=>{if(!re
 function renderAll(){renderStats();renderSessions();renderPlayerList();syncPlayerMonth();renderPlayerTabs();renderPlayer()}
 async function startApp(){
 
-  if(TEST_MODE){
-    authLoading=false;
-    authUser=null;
-    authRole=null;
+if(TEST_MODE){
+  authLoading=false;
+  authUser=null;
+  authRole=null;
 
-    SESSIONS={};
-    DEFAULT_SESSION_PARTICIPANTS={};
-    RECORDS=[];
-    GAMES=[];
-    SESSION_PARTICIPANTS={};
-    PLAYERS=[];
+  SESSIONS={};
+  DEFAULT_SESSION_PARTICIPANTS={};
+  RECORDS=[];
+  GAMES=[];
+  SESSION_PARTICIPANTS={};
+  PLAYERS=[];
 
-    const main=document.querySelector("main");
+  refreshSessionSelectors();
+  renderAll();
+  renderAdminAccess();
 
-    if(main){
-      main.innerHTML=`
-        <section class="view active">
-          <article class="panel">
-            <div class="section-title">
-              <span class="section-icon">🧪</span>
-              <h2>CREWTEST</h2>
-            </div>
-
-            <p>Mode laboratoire actif.</p>
-
-            <p class="muted">
-              Cette copie n'est connectée à aucun projet Supabase.
-              Les tests JSON effectués ici ne peuvent pas modifier Crew'mong Us.
-            </p>
-          </article>
-        </section>
-      `;
-    }
-
-    return;
+  return;
+}
   }
 
   try{
