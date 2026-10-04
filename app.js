@@ -864,8 +864,6 @@ document.getElementById("admin-add-session-btn").addEventListener("click",addAdm
 document.getElementById("admin-reset").addEventListener("click",async()=>{if(!requireEditor())return;try{await reloadPublicData();const status=document.getElementById("admin-manage-session-status");if(status&&!status.closest("#admin-only-tools")?.hidden)status.textContent="Données rechargées depuis Supabase."}catch(error){alert("Erreur Supabase : "+error.message)}});
 /* ===== Initialisation et rendu global ===== */
 function renderAll(){renderStats();renderSessions();renderPlayerList();syncPlayerMonth();renderPlayerTabs();renderPlayer()}
-async function startApp()
-
 async function startApp(){
 
   if(TEST_MODE){
