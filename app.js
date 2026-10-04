@@ -19,6 +19,9 @@ let DELETED_SESSIONS=new Set();
 let SESSIONS={};
 let DEFAULT_SESSION_PARTICIPANTS={};
 let RECORDS=[],GAMES=[],SESSION_PARTICIPANTS={},PLAYERS=[];
+let TEST_IMPORTS={};
+let pendingJsonImport=null;
+const CREWTEST_STORAGE_KEY="crewtest-json-lab-v1";
 let currentScope=latestMonth(),currentPlayer="Bunny_Island",currentPlayerMonth=latestMonth(),currentPlayerMode="month",editingRecordKey=null;
 
 /* ===== Authentification et données Supabase ===== */
@@ -434,6 +437,338 @@ function icon(name){
 function vrow(label,value,detail,icoName){return `<div class="vrow"><span class="ico">${icon(icoName)}</span><div><span class="vlabel">${esc(label)}</span><small>${esc(detail||"")}</small></div><strong>${esc(value)}</strong></div>`}
 function t1row(label,name,stat){return `<div class="t1mini"><div class="t1copy"><b class="t1label">${esc(label)}</b><strong class="t1name">${esc(name)}</strong><small class="t1stat">${esc(stat)}</small></div></div>`}
 function mentionRow(label,value,detail){return `<div class="mention-row"><div class="mention-copy"><b class="mention-label">${esc(label)}</b><small class="mention-detail">${esc(detail)}</small></div><strong class="mention-value">${esc(value)}</strong></div>`}
+
+
+/* ===== CREWTEST : import JSON local ===== */
+function crewtestNormalizeMap(map){
+  const s=String(map||"").trim();
+  if(/^skeld$/i.test(s))return "The Skeld";
+  if(/^fungle$/i.test(s))return "The Fungle";
+  if(/^mira(\s*hq)?$/i.test(s))return "MIRA HQ";
+  return s||"Inconnue";
+}
+function crewtestBaseName(raw,data){
+  const value=String(raw||"").trim();
+  const players=Array.isArray(data&&data.Players)?data.Players:[];
+  const exact=players.find(function(p){return value===String(p.Name||"")});
+  if(exact)return exact.Name;
+  const withColor=players.find(function(p){return value.startsWith(String(p.Name||"")+" (")});
+  if(withColor)return withColor.Name;
+  return value.replace(/\s+\([^)]*\)\s*$/,"");
+}
+function crewtestRole(role){
+  return /impost/i.test(String(role||""))?"Imposteur":"Crew";
+}
+function crewtestWinnerInfo(reason){
+  const s=String(reason||"");
+  const winner=/Crewmates/i.test(s)?"Crewmates":(/Impostors/i.test(s)?"Imposteurs":"");
+  let method="";
+  if(/task/i.test(s))method="Quêtes";
+  else if(/sabotage/i.test(s))method="Sabotage";
+  else if(/kill/i.test(s))method="Kills";
+  else if(/vot/i.test(s))method="Votes";
+  return {winner:winner,method:method};
+}
+function crewtestSabotageName(event){
+  const s=(String((event&&event.Detail)||"")+" "+String((event&&event.System)||"")).toLowerCase();
+  if(s.includes("reactor")||s.includes("laboratory"))return "Réacteur";
+  if(s.includes("light")||s.includes("electrical"))return "Lumières";
+  if(s.includes("oxygen")||s.includes("lifesupp"))return "Oxygène";
+  if(s.includes("comm"))return "Radio";
+  if(s.includes("heli")||s.includes("seismic"))return "Sismiques";
+  if(s.includes("mushroom"))return "Champignon";
+  if(s.includes("door"))return "Portes";
+  return "";
+}
+function crewtestTs(value){
+  const n=Date.parse(String(value||""));
+  return Number.isFinite(n)?n:null;
+}
+function crewtestSessionId(data){
+  const s=String((data&&data.StartedAt)||"");
+  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m?m[1]+"-"+m[2]+"-"+m[3]:"";
+}
+function crewtestPlayerKey(data){
+  return (Array.isArray(data&&data.Players)?data.Players:[])
+    .map(function(p){return String(p.Name||"").trim().toLowerCase()})
+    .filter(Boolean).sort().join("|");
+}
+function crewtestFingerprint(data){
+  if(data&&data.GameFingerprint)return String(data.GameFingerprint);
+  return [String((data&&data.StartedAt)||""),crewtestNormalizeMap(data&&data.Map),crewtestPlayerKey(data)].join("||");
+}
+function crewtestFindDuplicate(data){
+  const fp=crewtestFingerprint(data);
+  if(TEST_IMPORTS[fp])return TEST_IMPORTS[fp];
+  const start=crewtestTs(data&&data.StartedAt);
+  const map=crewtestNormalizeMap(data&&data.Map);
+  const key=crewtestPlayerKey(data);
+  return Object.values(TEST_IMPORTS).find(function(x){
+    if(!x)return false;
+    const other=crewtestTs(x.startedAt);
+    return x.map===map&&x.playerKey===key&&start!==null&&other!==null&&Math.abs(start-other)<=30000;
+  })||null;
+}
+function crewtestSaveState(){
+  if(!TEST_MODE)return;
+  localStorage.setItem(CREWTEST_STORAGE_KEY,JSON.stringify({
+    sessions:SESSIONS,games:GAMES,records:RECORDS,players:PLAYERS,
+    participants:SESSION_PARTICIPANTS,imports:TEST_IMPORTS
+  }));
+}
+function crewtestLoadState(){
+  if(!TEST_MODE)return;
+  try{
+    const raw=localStorage.getItem(CREWTEST_STORAGE_KEY);
+    if(!raw)return;
+    const state=JSON.parse(raw);
+    SESSIONS=state.sessions&&typeof state.sessions==="object"?state.sessions:{};
+    GAMES=Array.isArray(state.games)?state.games:[];
+    RECORDS=Array.isArray(state.records)?state.records:[];
+    PLAYERS=Array.isArray(state.players)?state.players:[];
+    SESSION_PARTICIPANTS=state.participants&&typeof state.participants==="object"?state.participants:{};
+    TEST_IMPORTS=state.imports&&typeof state.imports==="object"?state.imports:{};
+    DEFAULT_SESSION_PARTICIPANTS=Object.fromEntries(Object.keys(SESSIONS).map(function(id){return [id,[]]}));
+  }catch(error){
+    console.error("CREWTEST : impossible de relire les données locales.",error);
+  }
+}
+function crewtestRefreshAll(sessionId){
+  refreshSessionSelectors();
+  if(sessionId){
+    currentScope=(SESSIONS[sessionId]&&SESSIONS[sessionId].month)||currentScope;
+    const period=document.getElementById("period-select");
+    if(period&&Array.from(period.options).some(function(o){return o.value===currentScope}))period.value=currentScope;
+    const sm=document.getElementById("session-month");
+    if(sm&&Array.from(sm.options).some(function(o){return o.value===currentScope}))sm.value=currentScope;
+    currentPlayerMonth=currentScope;
+  }
+  populateGameSelect();
+  syncEntryPlayerOptions();
+  refreshEventPlayerOptions();
+  renderAll();
+  renderAdminAccess();
+  if(adminCanWrite())renderAdmin();
+}
+function crewtestBuildPreview(data){
+  if(!data||typeof data!=="object")throw new Error("Le fichier ne contient pas un objet JSON valide.");
+  if(!data.StartedAt)throw new Error("StartedAt est absent du JSON.");
+  if(!Array.isArray(data.Players)||!data.Players.length)throw new Error("Aucun joueur trouvé dans Players.");
+  const sessionId=crewtestSessionId(data);
+  if(!sessionId)throw new Error("La date StartedAt n'est pas reconnue.");
+  const duplicate=crewtestFindDuplicate(data);
+  const nums=GAMES.filter(function(g){return g.session===sessionId}).map(function(g){return Number(g.n)||0});
+  const nextGame=Math.max.apply(null,[0].concat(nums))+1;
+  const win=crewtestWinnerInfo(data.WinnerReason);
+  const warnings=[];
+  if(!win.winner)warnings.push("Camp gagnant non reconnu.");
+  if(!win.method)warnings.push("Méthode de victoire non reconnue.");
+  if((data.Events||[]).some(function(e){return e.Type==="sabotage_end"}))
+    warnings.push("Les anciennes V2/V2.1 ne permettent pas encore d'attribuer fiablement tous les réparateurs.");
+  if(duplicate)warnings.push("Doublon probable : déjà importé comme Game "+duplicate.gameNumber+" du "+duplicate.sessionId+".");
+  return {
+    data:data,sessionId:sessionId,nextGame:nextGame,duplicate:duplicate,warnings:warnings,
+    fingerprint:crewtestFingerprint(data),map:crewtestNormalizeMap(data.Map),
+    playerKey:crewtestPlayerKey(data),win:win
+  };
+}
+function crewtestRenderPreview(preview){
+  const box=document.getElementById("json-import-preview");
+  const warn=document.getElementById("json-import-warnings");
+  const confirmButton=document.getElementById("json-import-confirm");
+  if(!box||!warn||!confirmButton)return;
+  const players=preview.data.Players.map(function(p){return esc(p.Name)+" ("+crewtestRole(p.Role)+")"}).join(", ");
+  const meta=SESSIONS[preview.sessionId]
+    ? SESSIONS[preview.sessionId].label+" — existante"
+    : sessionMetaFromId(preview.sessionId).label+" — sera créée";
+  const rows=[
+    ["Soirée",meta],["Game",preview.nextGame],["Map",preview.map],
+    ["Joueurs",players],["Vainqueur",preview.win.winner||"À vérifier"],
+    ["Méthode",preview.win.method||"À vérifier"],["Logger",preview.data.LoggerVersion||"inconnue"]
+  ];
+  box.hidden=false;
+  box.innerHTML=rows.map(function(row){
+    return '<div class="card"><span>'+esc(row[0])+'</span><strong>'+row[1]+'</strong></div>';
+  }).join("");
+  warn.innerHTML=preview.warnings.length
+    ?preview.warnings.map(function(w){return "<div>⚠ "+esc(w)+"</div>"}).join("")
+    :"Aucune anomalie évidente détectée.";
+  confirmButton.disabled=!!preview.duplicate;
+}
+function crewtestImportData(preview){
+  const data=preview.data;
+  const sessionId=preview.sessionId;
+  const gameNumber=preview.nextGame;
+  const events=Array.isArray(data.Events)?data.Events:[];
+  const meetings=Array.isArray(data.Meetings)?data.Meetings:[];
+  const rawPlayers=data.Players;
+  const nameOf=function(v){return crewtestBaseName(v,data)};
+
+  if(!SESSIONS[sessionId])SESSIONS[sessionId]=sessionMetaFromId(sessionId);
+
+  rawPlayers.forEach(function(p,i){
+    const name=String(p.Name||"").trim();
+    if(!name)return;
+    if(!PLAYERS.some(function(x){return x.name===name})){
+      PLAYERS.push({id:"test-"+sessionId+"-"+i+"-"+name,name:name,handle:name,active:true,source:"json"});
+    }
+  });
+  const participantSet=new Set((SESSION_PARTICIPANTS[sessionId]||[]).concat(rawPlayers.map(function(p){return String(p.Name||"").trim()}).filter(Boolean)));
+  SESSION_PARTICIPANTS[sessionId]=Array.from(participantSet);
+
+  const killEvents=events.filter(function(e){return e.Type==="kill"}).map(function(e){
+    return Object.assign({},e,{killer:nameOf(e.Player),victim:nameOf(e.Target),ts:crewtestTs(e.Timestamp)});
+  }).sort(function(a,b){return (a.ts||0)-(b.ts||0)});
+  const deathOrder=new Map();
+  killEvents.forEach(function(e,i){if(e.victim&&!deathOrder.has(e.victim))deathOrder.set(e.victim,i+1)});
+  const meetingTimes=meetings.map(function(m){return crewtestTs(m.StartedAt)}).filter(function(x){return x!==null}).sort(function(a,b){return a-b});
+  const killByVictim=new Map(killEvents.map(function(e){return [e.victim,e]}));
+
+  const exiled=new Set();
+  meetings.forEach(function(m){
+    const value=String(m.ExileResult||"").toLowerCase();
+    rawPlayers.forEach(function(p){
+      const name=String(p.Name||"");
+      if(name&&value.startsWith(name.toLowerCase()+" "))exiled.add(name);
+    });
+  });
+  events.filter(function(e){return e.Type==="exile_result"}).forEach(function(e){
+    const value=String(e.Detail||"").toLowerCase();
+    rawPlayers.forEach(function(p){
+      const name=String(p.Name||"");
+      if(name&&value.startsWith(name.toLowerCase()+" "))exiled.add(name);
+    });
+  });
+
+  const reportCounts=new Map(),selfCounts=new Map();
+  meetings.forEach(function(m){
+    if(m.Emergency||!m.Reporter||!m.ReportedBody)return;
+    const reporter=nameOf(m.Reporter),body=nameOf(m.ReportedBody);
+    const killed=killByVictim.get(body);
+    if(killed&&killed.killer===reporter)selfCounts.set(reporter,(selfCounts.get(reporter)||0)+1);
+    else reportCounts.set(reporter,(reportCounts.get(reporter)||0)+1);
+  });
+
+  const sabotageByPlayer=new Map();
+  events.filter(function(e){return e.Type==="sabotage_start"}).forEach(function(start){
+    const sab=crewtestSabotageName(start);
+    if(!sab)return;
+    let actor=nameOf(start.Player);
+    if(!actor){
+      const t=crewtestTs(start.Timestamp);
+      const nearby=events.find(function(e){
+        if(e.Type!=="system_update"||!e.Player)return false;
+        const et=crewtestTs(e.Timestamp);
+        return t!==null&&et!==null&&Math.abs(t-et)<=2000&&Number(e.Amount)===128;
+      });
+      if(nearby)actor=nameOf(nearby.Player);
+    }
+    if(!actor){
+      const impostors=rawPlayers.filter(function(p){return crewtestRole(p.Role)==="Imposteur"});
+      if(impostors.length===1)actor=impostors[0].Name;
+    }
+    if(actor){
+      if(!sabotageByPlayer.has(actor))sabotageByPlayer.set(actor,[]);
+      sabotageByPlayer.get(actor).push(sab);
+    }
+  });
+
+  const t1Deaths=killEvents.filter(function(e){
+    return e.ts!==null&&!meetingTimes.some(function(mt){return mt<e.ts});
+  }).length;
+  const gameId="test-game-"+preview.fingerprint;
+  GAMES.push({
+    id:gameId,session:sessionId,n:gameNumber,map:preview.map,
+    winner:preview.win.winner||"Inconnu",method:preview.win.method||"Inconnu",
+    t1Deaths:t1Deaths,startedAt:data.StartedAt,fingerprint:preview.fingerprint
+  });
+
+  rawPlayers.forEach(function(p,i){
+    const name=String(p.Name||"").trim();
+    if(!name)return;
+    const role=crewtestRole(p.Role);
+    const kills=killEvents.filter(function(e){return e.killer===name}).map(function(e){return e.victim}).filter(Boolean);
+    const deathEvent=killByVictim.get(name);
+    let death="Survit",deathPos=null,turn=null;
+    if(deathEvent){
+      death="Tué par "+deathEvent.killer;
+      deathPos=deathOrder.get(name)||null;
+      turn=1+meetingTimes.filter(function(mt){return deathEvent.ts!==null&&mt<deathEvent.ts}).length;
+    }else if(exiled.has(name)){
+      death="Éjecté au conseil";
+    }
+    const sabotages=sabotageByPlayer.get(name)||[];
+    RECORDS.push({
+      id:"test-record-"+preview.fingerprint+"-"+i,gameId:gameId,session:sessionId,p:name,g:gameNumber,role:role,
+      reports:reportCounts.get(name)||0,self:selfCounts.get(name)||0,
+      sab:sabotages.length,sabotages:sabotages,repair:0,
+      kills:role==="Imposteur"?kills:[],death:death,deathPos:deathPos,turn:turn,
+      tasks:role==="Crew"?Number(p.TasksCompleted||0):null,
+      totalTasks:role==="Crew"?Number(p.TasksTotal||0):null,
+      ejected:exiled.has(name),note:"Import JSON "+String(data.LoggerVersion||"")
+    });
+  });
+
+  TEST_IMPORTS[preview.fingerprint]={
+    fingerprint:preview.fingerprint,sessionId:sessionId,gameNumber:gameNumber,
+    startedAt:data.StartedAt,map:preview.map,playerKey:preview.playerKey,
+    loggerVersion:data.LoggerVersion||"",raw:data
+  };
+  crewtestSaveState();
+
+  currentScope=SESSIONS[sessionId].month;
+  currentPlayer=String((rawPlayers[0]&&rawPlayers[0].Name)||currentPlayer);
+  currentPlayerMonth=currentScope;
+  currentPlayerMode="month";
+  crewtestRefreshAll(sessionId);
+  return {sessionId:sessionId,gameNumber:gameNumber};
+}
+function crewtestReset(){
+  localStorage.removeItem(CREWTEST_STORAGE_KEY);
+  SESSIONS={};GAMES=[];RECORDS=[];PLAYERS=[];SESSION_PARTICIPANTS={};TEST_IMPORTS={};
+  DEFAULT_SESSION_PARTICIPANTS={};
+  pendingJsonImport=null;
+  const file=document.getElementById("json-import-file");if(file)file.value="";
+  const preview=document.getElementById("json-import-preview");if(preview){preview.hidden=true;preview.innerHTML=""}
+  const warnings=document.getElementById("json-import-warnings");if(warnings)warnings.textContent="";
+  const confirmButton=document.getElementById("json-import-confirm");if(confirmButton)confirmButton.disabled=true;
+  crewtestRefreshAll();
+}
+function crewtestInitImporter(){
+  const file=document.getElementById("json-import-file");
+  const confirmButton=document.getElementById("json-import-confirm");
+  const clear=document.getElementById("json-import-clear");
+  const status=document.getElementById("json-import-status");
+  if(!file||!confirmButton||!clear)return;
+  file.addEventListener("change",async function(){
+    pendingJsonImport=null;
+    confirmButton.disabled=true;
+    if(status)status.textContent="";
+    const selected=file.files&&file.files[0];
+    if(!selected)return;
+    try{
+      const data=JSON.parse(await selected.text());
+      pendingJsonImport=crewtestBuildPreview(data);
+      crewtestRenderPreview(pendingJsonImport);
+      if(status)status.textContent=pendingJsonImport.duplicate?"Import bloqué : doublon probable.":"Prévisualisation prête.";
+    }catch(error){
+      const box=document.getElementById("json-import-preview");if(box)box.hidden=true;
+      const warnings=document.getElementById("json-import-warnings");if(warnings)warnings.textContent="Erreur : "+error.message;
+      if(status)status.textContent="Fichier non importable.";
+    }
+  });
+  confirmButton.addEventListener("click",function(){
+    if(!pendingJsonImport||pendingJsonImport.duplicate)return;
+    const result=crewtestImportData(pendingJsonImport);
+    if(status)status.textContent="Importé : soirée "+SESSIONS[result.sessionId].label+", Game "+result.gameNumber+".";
+    confirmButton.disabled=true;
+    pendingJsonImport=null;
+  });
+  clear.addEventListener("click",function(){
+    if(window.confirm("Vider toutes les données locales de CREWTEST ?"))crewtestReset();
+  });
+}
 
 /* navigation */
 document.querySelectorAll(".nav").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll(".nav").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));document.getElementById("view-"+b.dataset.view).classList.add("active");if(b.dataset.view==="admin"){renderAdminAccess();if(adminCanWrite())renderAdmin()}}));
@@ -868,21 +1203,11 @@ async function startApp(){
 
   if(TEST_MODE){
     authLoading=false;
-
-    // Faux compte Admin uniquement local à CREWTEST
-    authUser={
-      email:"crewtest@local"
-    };
+    authUser={email:"crewtest@local"};
     authRole="admin";
 
-    SESSIONS={};
-    DEFAULT_SESSION_PARTICIPANTS={};
-    RECORDS=[];
-    GAMES=[];
-    SESSION_PARTICIPANTS={};
-    PLAYERS=[];
+    crewtestLoadState();
 
-    // Affiche aussi l'onglet Saisie
     const entryNav=document.querySelector('.nav[data-view="entry"]');
     if(entryNav)entryNav.hidden=false;
 
@@ -890,6 +1215,8 @@ async function startApp(){
     initEntry();
     renderAll();
     renderAdminAccess();
+    if(adminCanWrite())renderAdmin();
+    crewtestInitImporter();
 
     return;
   }
