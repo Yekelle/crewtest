@@ -498,30 +498,233 @@ function crewtestFingerprint(data){
   if(data&&data.GameFingerprint)return String(data.GameFingerprint);
   return [String((data&&data.StartedAt)||""),crewtestNormalizeMap(data&&data.Map),crewtestPlayerKey(data)].join("||");
 }
+function crewtestCoreSignature(data){
+  const events=Array.isArray(data&&data.Events)?data.Events:[];
+  const meetings=Array.isArray(data&&data.Meetings)?data.Meetings:[];
+  const players=(Array.isArray(data&&data.Players)?data.Players:[]).map(function(p){
+    return String(p.Name||"").trim().toLowerCase()+":"+crewtestRole(p.Role);
+  }).sort();
+  const kills=events.filter(function(e){return e.Type==="kill"}).map(function(e){
+    return crewtestBaseName(e.Player,data).toLowerCase()+">"+crewtestBaseName(e.Target,data).toLowerCase();
+  });
+  const meetingSig=meetings.slice().sort(function(a,b){return Number(a.Number||0)-Number(b.Number||0)}).map(function(m){
+    const votes=(Array.isArray(m.Votes)?m.Votes:[]).map(function(v){
+      return crewtestBaseName(v.Voter,data).toLowerCase()+">"+crewtestBaseName(v.Target,data).toLowerCase()+":"+String(v.Type||"");
+    }).sort();
+    return [
+      crewtestBaseName(m.Reporter,data).toLowerCase(),
+      crewtestBaseName(m.ReportedBody,data).toLowerCase(),
+      m.Emergency===true?"emergency":"report",
+      crewtestBaseName(String(m.ExileResult||"").split(" was ")[0],data).toLowerCase(),
+      votes.join(",")
+    ].join("|");
+  });
+  return JSON.stringify({
+    map:crewtestNormalizeMap(data&&data.Map),
+    players:players,
+    winner:String((data&&data.WinnerReason)||"").toLowerCase(),
+    kills:kills,
+    meetings:meetingSig
+  });
+}
+function crewtestEventInfoKey(e,data){
+  return [
+    String(e&&e.Type||""),
+    crewtestBaseName(e&&e.Player,data).toLowerCase(),
+    crewtestBaseName(e&&e.Target,data).toLowerCase(),
+    String(e&&e.System||""),
+    e&&e.Amount!==null&&e&&e.Amount!==undefined?String(e.Amount):"",
+    String(e&&e.Detail||"").replace(/\s+/g," ").trim(),
+    String(e&&e.Location||"").trim()
+  ].join("|");
+}
 function crewtestFindDuplicate(data){
   const fp=crewtestFingerprint(data);
-  if(TEST_IMPORTS[fp])return TEST_IMPORTS[fp];
+  const all=Object.values(TEST_IMPORTS).filter(Boolean);
+  const exact=TEST_IMPORTS[fp]||all.find(function(x){
+    return x.fingerprint===fp||(Array.isArray(x.fingerprints)&&x.fingerprints.includes(fp));
+  });
+  if(exact)return {kind:"exact",info:exact};
 
   const start=crewtestTs(data&&data.StartedAt);
-  const finish=crewtestTs(data&&data.FinishedAt);
-  const map=crewtestNormalizeMap(data&&data.Map);
-  const key=crewtestPlayerKey(data);
-  const winner=String((data&&data.WinnerReason)||"");
-
-  return Object.values(TEST_IMPORTS).find(function(x){
-    if(!x)return false;
-
-    const otherStart=crewtestTs(x.startedAt);
+  const core=crewtestCoreSignature(data);
+  const same=all.find(function(x){
     const raw=x.raw||{};
-    const otherFinish=crewtestTs(raw.FinishedAt);
-    const otherWinner=String(raw.WinnerReason||"");
+    const otherStart=crewtestTs(x.startedAt||raw.StartedAt);
+    const closeInTime=start!==null&&otherStart!==null&&Math.abs(start-otherStart)<=120000;
+    return closeInTime&&crewtestCoreSignature(raw)===core;
+  });
+  return same?{kind:"same_game",info:same}:null;
+}
+function crewtestCompareInformation(existingRaw,incomingRaw){
+  const oldEvents=Array.isArray(existingRaw&&existingRaw.Events)?existingRaw.Events:[];
+  const newEvents=Array.isArray(incomingRaw&&incomingRaw.Events)?incomingRaw.Events:[];
+  const oldKeys=new Set(oldEvents.map(function(e){return crewtestEventInfoKey(e,existingRaw)}));
+  const extras=newEvents.filter(function(e){return !oldKeys.has(crewtestEventInfoKey(e,incomingRaw))});
+  const extraSystems=extras.filter(function(e){return e.Type==="system_update"&&e.Player});
+  const oldVotes=(Array.isArray(existingRaw&&existingRaw.Meetings)?existingRaw.Meetings:[]).reduce(function(n,m){return n+(Array.isArray(m.Votes)?m.Votes.length:0)},0);
+  const newVotes=(Array.isArray(incomingRaw&&incomingRaw.Meetings)?incomingRaw.Meetings:[]).reduce(function(n,m){return n+(Array.isArray(m.Votes)?m.Votes.length:0)},0);
+  const oldTaskInfo=(Array.isArray(existingRaw&&existingRaw.Players)?existingRaw.Players:[]).reduce(function(n,p){return n+Number(p.TasksCompleted||0)+Number(p.TasksTotal||0)},0);
+  const newTaskInfo=(Array.isArray(incomingRaw&&incomingRaw.Players)?incomingRaw.Players:[]).reduce(function(n,p){return n+Number(p.TasksCompleted||0)+Number(p.TasksTotal||0)},0);
+  const details=[];
+  if(extraSystems.length)details.push(extraSystems.length+" trace(s) système supplémentaire(s)");
+  const otherExtras=extras.length-extraSystems.length;
+  if(otherExtras>0)details.push(otherExtras+" autre(s) événement(s) supplémentaire(s)");
+  if(newVotes>oldVotes)details.push((newVotes-oldVotes)+" vote(s) supplémentaire(s)");
+  if(newTaskInfo>oldTaskInfo)details.push("informations de tâches plus complètes");
+  return {
+    richer:extras.length>0||newVotes>oldVotes||newTaskInfo>oldTaskInfo,
+    details:details,
+    extraEvents:extras.length
+  };
+}
+function crewtestMergeRaw(existingRaw,incomingRaw){
+  const merged=Object.assign({},existingRaw||{},incomingRaw||{});
+  const aStart=crewtestTs(existingRaw&&existingRaw.StartedAt),bStart=crewtestTs(incomingRaw&&incomingRaw.StartedAt);
+  const aEnd=crewtestTs(existingRaw&&existingRaw.FinishedAt),bEnd=crewtestTs(incomingRaw&&incomingRaw.FinishedAt);
+  if(aStart!==null&&bStart!==null)merged.StartedAt=aStart<=bStart?existingRaw.StartedAt:incomingRaw.StartedAt;
+  if(aEnd!==null&&bEnd!==null)merged.FinishedAt=aEnd>=bEnd?existingRaw.FinishedAt:incomingRaw.FinishedAt;
+  merged.DurationSeconds=Math.max(Number(existingRaw&&existingRaw.DurationSeconds||0),Number(incomingRaw&&incomingRaw.DurationSeconds||0));
 
-    const sameStart=start!==null&&otherStart!==null&&Math.abs(start-otherStart)<=8000;
-    const sameFinish=finish!==null&&otherFinish!==null&&Math.abs(finish-otherFinish)<=8000;
-    const sameWinner=winner&&otherWinner&&winner===otherWinner;
+  const playerMap=new Map();
+  [existingRaw,incomingRaw].forEach(function(src){
+    (Array.isArray(src&&src.Players)?src.Players:[]).forEach(function(p){
+      const key=String(p.Name||"").trim().toLowerCase();
+      if(!key)return;
+      const old=playerMap.get(key)||{};
+      playerMap.set(key,Object.assign({},old,p,{
+        Dead:old.Dead===true||p.Dead===true,
+        Disconnected:old.Disconnected===true||p.Disconnected===true,
+        TasksCompleted:Math.max(Number(old.TasksCompleted||0),Number(p.TasksCompleted||0)),
+        TasksTotal:Math.max(Number(old.TasksTotal||0),Number(p.TasksTotal||0))
+      }));
+    });
+  });
+  merged.Players=Array.from(playerMap.values());
 
-    return x.map===map&&x.playerKey===key&&sameStart&&sameFinish&&sameWinner;
-  })||null;
+  const eventMap=new Map();
+  [existingRaw,incomingRaw].forEach(function(src){
+    (Array.isArray(src&&src.Events)?src.Events:[]).forEach(function(e){
+      const key=crewtestEventInfoKey(e,src);
+      const old=eventMap.get(key);
+      if(!old){eventMap.set(key,e);return}
+      const ot=crewtestTs(old.Timestamp),nt=crewtestTs(e.Timestamp);
+      if(nt!==null&&(ot===null||nt<ot))eventMap.set(key,e);
+    });
+  });
+  merged.Events=Array.from(eventMap.values()).sort(function(a,b){return (crewtestTs(a.Timestamp)||0)-(crewtestTs(b.Timestamp)||0)});
+
+  const meetingMap=new Map();
+  [existingRaw,incomingRaw].forEach(function(src){
+    (Array.isArray(src&&src.Meetings)?src.Meetings:[]).forEach(function(m){
+      const key=String(m.Number||1);
+      const old=meetingMap.get(key)||{};
+      const voteMap=new Map();
+      (Array.isArray(old.Votes)?old.Votes:[]).concat(Array.isArray(m.Votes)?m.Votes:[]).forEach(function(v){
+        const vk=[crewtestBaseName(v.Voter,src).toLowerCase(),crewtestBaseName(v.Target,src).toLowerCase(),String(v.Type||"")].join("|");
+        voteMap.set(vk,v);
+      });
+      meetingMap.set(key,Object.assign({},old,m,{Votes:Array.from(voteMap.values())}));
+    });
+  });
+  merged.Meetings=Array.from(meetingMap.values()).sort(function(a,b){return Number(a.Number||0)-Number(b.Number||0)});
+  return merged;
+}
+function crewtestDeriveGame(data){
+  const events=Array.isArray(data&&data.Events)?data.Events:[];
+  const meetings=Array.isArray(data&&data.Meetings)?data.Meetings:[];
+  const rawPlayers=Array.isArray(data&&data.Players)?data.Players:[];
+  const nameOf=function(v){return crewtestBaseName(v,data)};
+  const killEvents=events.filter(function(e){return e.Type==="kill"}).map(function(e){
+    return Object.assign({},e,{killer:nameOf(e.Player),victim:nameOf(e.Target),ts:crewtestTs(e.Timestamp)});
+  }).sort(function(a,b){return (a.ts||0)-(b.ts||0)});
+  const deathOrder=new Map();
+  killEvents.forEach(function(e,i){if(e.victim&&!deathOrder.has(e.victim))deathOrder.set(e.victim,i+1)});
+  const meetingTimes=meetings.map(function(m){return crewtestTs(m.StartedAt)}).filter(function(x){return x!==null}).sort(function(a,b){return a-b});
+  const killByVictim=new Map(killEvents.map(function(e){return [e.victim,e]}));
+  const exiled=new Set();
+  meetings.forEach(function(m){
+    const value=String(m.ExileResult||"").toLowerCase();
+    rawPlayers.forEach(function(p){const name=String(p.Name||"");if(name&&value.startsWith(name.toLowerCase()+" "))exiled.add(name)});
+  });
+  events.filter(function(e){return e.Type==="exile_result"}).forEach(function(e){
+    const value=String(e.Detail||"").toLowerCase();
+    rawPlayers.forEach(function(p){const name=String(p.Name||"");if(name&&value.startsWith(name.toLowerCase()+" "))exiled.add(name)});
+  });
+  const reportCounts=new Map(),selfCounts=new Map();
+  meetings.forEach(function(m){
+    if(m.Emergency||!m.Reporter||!m.ReportedBody)return;
+    const reporter=nameOf(m.Reporter),body=nameOf(m.ReportedBody),killed=killByVictim.get(body);
+    if(killed&&killed.killer===reporter)selfCounts.set(reporter,(selfCounts.get(reporter)||0)+1);
+    else reportCounts.set(reporter,(reportCounts.get(reporter)||0)+1);
+  });
+  const sabotageByPlayer=new Map();
+  events.filter(function(e){return e.Type==="sabotage_start"}).forEach(function(start){
+    const sab=crewtestSabotageName(start);if(!sab)return;
+    let actor=nameOf(start.Player);
+    if(!actor){
+      const t=crewtestTs(start.Timestamp);
+      const nearby=events.filter(function(e){
+        if(e.Type!=="system_update"||!e.Player||Number(e.Amount)!==128)return false;
+        const et=crewtestTs(e.Timestamp);
+        return t!==null&&et!==null&&Math.abs(t-et)<=8000;
+      }).sort(function(a,b){return Math.abs((crewtestTs(a.Timestamp)||0)-t)-Math.abs((crewtestTs(b.Timestamp)||0)-t)})[0];
+      if(nearby)actor=nameOf(nearby.Player);
+    }
+    if(!actor){
+      const impostors=rawPlayers.filter(function(p){return crewtestRole(p.Role)==="Imposteur"});
+      if(impostors.length===1)actor=impostors[0].Name;
+    }
+    if(actor){if(!sabotageByPlayer.has(actor))sabotageByPlayer.set(actor,[]);sabotageByPlayer.get(actor).push(sab)}
+  });
+  const rows=rawPlayers.map(function(p){
+    const name=String(p.Name||"").trim(),role=crewtestRole(p.Role);
+    const kills=killEvents.filter(function(e){return e.killer===name}).map(function(e){return e.victim}).filter(Boolean);
+    const deathEvent=killByVictim.get(name);
+    let death="Survit",deathPos=null,turn=null;
+    if(deathEvent){
+      death="Tué par "+deathEvent.killer;deathPos=deathOrder.get(name)||null;
+      turn=1+meetingTimes.filter(function(mt){return deathEvent.ts!==null&&mt<deathEvent.ts}).length;
+    }else if(exiled.has(name))death="Éjecté au conseil";
+    const sabotages=sabotageByPlayer.get(name)||[];
+    return {name:name,role:role,reports:reportCounts.get(name)||0,self:selfCounts.get(name)||0,sabotages:sabotages,kills:kills,death:death,deathPos:deathPos,turn:turn,tasks:role==="Crew"?Number(p.TasksCompleted||0):null,totalTasks:role==="Crew"?Number(p.TasksTotal||0):null,ejected:exiled.has(name)};
+  });
+  const t1Deaths=killEvents.filter(function(e){return e.ts!==null&&!meetingTimes.some(function(mt){return mt<e.ts})}).length;
+  return {rows:rows,t1Deaths:t1Deaths,win:crewtestWinnerInfo(data.WinnerReason),map:crewtestNormalizeMap(data.Map)};
+}
+function crewtestMergeIntoGame(preview){
+  const match=preview.match&&preview.match.info;if(!match)throw new Error("Game existante introuvable.");
+  const merged=crewtestMergeRaw(match.raw||{},preview.data);
+  const derived=crewtestDeriveGame(merged);
+  const game=GAMES.find(function(g){return g.session===match.sessionId&&Number(g.n)===Number(match.gameNumber)});
+  if(!game)throw new Error("La game existante n\u0027est plus présente dans CREWTEST.");
+  game.map=derived.map;game.winner=derived.win.winner||game.winner;game.method=derived.win.method||game.method;game.t1Deaths=derived.t1Deaths;
+  derived.rows.forEach(function(row){
+    const r=RECORDS.find(function(x){return x.gameId===game.id&&x.p===row.name});
+    if(!r)return;
+    r.role=row.role;
+    r.reports=Math.max(Number(r.reports||0),row.reports);
+    r.self=Math.max(Number(r.self||0),row.self);
+    if(row.sabotages.length>=Number(r.sab||0)){r.sabotages=row.sabotages.slice();r.sab=row.sabotages.length}
+    if(row.kills.length>=(Array.isArray(r.kills)?r.kills.length:0))r.kills=row.kills.slice();
+    if(r.death==="Survit"&&row.death!=="Survit")r.death=row.death;
+    if(r.deathPos===null&&row.deathPos!==null)r.deathPos=row.deathPos;
+    if(r.turn===null&&row.turn!==null)r.turn=row.turn;
+    if(row.tasks!==null)r.tasks=Math.max(Number(r.tasks||0),row.tasks);
+    if(row.totalTasks!==null)r.totalTasks=Math.max(Number(r.totalTasks||0),row.totalTasks);
+    r.ejected=r.ejected===true||row.ejected===true;
+  });
+  match.raw=merged;
+  match.startedAt=merged.StartedAt||match.startedAt;
+  match.map=derived.map;
+  match.playerKey=crewtestPlayerKey(merged);
+  match.loggerVersion=merged.LoggerVersion||match.loggerVersion;
+  match.fingerprints=Array.from(new Set((match.fingerprints||[match.fingerprint]).concat([preview.fingerprint])));
+  match.sources=Array.from(new Set((match.sources||[]).concat(preview.sourceName?[preview.sourceName]:[])));
+  crewtestSaveState();
+  currentScope=SESSIONS[match.sessionId].month;currentPlayerMonth=currentScope;currentPlayerMode="month";
+  crewtestRefreshAll(match.sessionId);
+  return {sessionId:match.sessionId,gameNumber:match.gameNumber};
 }
 function crewtestSaveState(){
   if(!TEST_MODE)return;
@@ -564,26 +767,30 @@ function crewtestRefreshAll(sessionId){
   renderAdminAccess();
   if(adminCanWrite())renderAdmin();
 }
-function crewtestBuildPreview(data){
+function crewtestBuildPreview(data,sourceName){
   if(!data||typeof data!=="object")throw new Error("Le fichier ne contient pas un objet JSON valide.");
   if(!data.StartedAt)throw new Error("StartedAt est absent du JSON.");
   if(!Array.isArray(data.Players)||!data.Players.length)throw new Error("Aucun joueur trouvé dans Players.");
   const sessionId=crewtestSessionId(data);
-  if(!sessionId)throw new Error("La date StartedAt n'est pas reconnue.");
-  const duplicate=crewtestFindDuplicate(data);
+  if(!sessionId)throw new Error("La date StartedAt n\u0027est pas reconnue.");
+  const match=crewtestFindDuplicate(data);
   const nums=GAMES.filter(function(g){return g.session===sessionId}).map(function(g){return Number(g.n)||0});
   const nextGame=Math.max.apply(null,[0].concat(nums))+1;
   const win=crewtestWinnerInfo(data.WinnerReason);
   const warnings=[];
+  let comparison=null;
   if(!win.winner)warnings.push("Camp gagnant non reconnu.");
   if(!win.method)warnings.push("Méthode de victoire non reconnue.");
-  if((data.Events||[]).some(function(e){return e.Type==="sabotage_end"}))
-    warnings.push("Les anciennes V2/V2.1 ne permettent pas encore d'attribuer fiablement tous les réparateurs.");
-  if(duplicate)warnings.push("Doublon probable : déjà importé comme Game "+duplicate.gameNumber+" du "+duplicate.sessionId+".");
+  if((data.Events||[]).some(function(e){return e.Type==="sabotage_end"}))warnings.push("Les anciennes V2/V2.1 ne permettent pas encore d\u0027attribuer fiablement tous les réparateurs.");
+  if(match&&match.kind==="exact")warnings.push("Cette source a déjà été importée pour la Game "+match.info.gameNumber+".");
+  if(match&&match.kind==="same_game"){
+    comparison=crewtestCompareInformation(match.info.raw||{},data);
+    if(comparison.richer)warnings.push("Même game détectée : nouvelles informations disponibles pour compléter la Game "+match.info.gameNumber+".");
+    else warnings.push("Même game détectée, mais aucune information nouvelle utile.");
+  }
   return {
-    data:data,sessionId:sessionId,nextGame:nextGame,duplicate:duplicate,warnings:warnings,
-    fingerprint:crewtestFingerprint(data),map:crewtestNormalizeMap(data.Map),
-    playerKey:crewtestPlayerKey(data),win:win
+    data:data,sourceName:sourceName||"",sessionId:sessionId,nextGame:nextGame,match:match,comparison:comparison,warnings:warnings,
+    fingerprint:crewtestFingerprint(data),map:crewtestNormalizeMap(data.Map),playerKey:crewtestPlayerKey(data),win:win
   };
 }
 function crewtestRenderPreview(preview){
@@ -592,22 +799,21 @@ function crewtestRenderPreview(preview){
   const confirmButton=document.getElementById("json-import-confirm");
   if(!box||!warn||!confirmButton)return;
   const players=preview.data.Players.map(function(p){return esc(p.Name)+" ("+crewtestRole(p.Role)+")"}).join(", ");
-  const meta=SESSIONS[preview.sessionId]
-    ? SESSIONS[preview.sessionId].label+" — existante"
-    : sessionMetaFromId(preview.sessionId).label+" — sera créée";
-  const rows=[
-    ["Soirée",meta],["Game",preview.nextGame],["Map",preview.map],
-    ["Joueurs",players],["Vainqueur",preview.win.winner||"À vérifier"],
-    ["Méthode",preview.win.method||"À vérifier"],["Logger",preview.data.LoggerVersion||"inconnue"]
-  ];
+  const matched=preview.match&&preview.match.info;
+  const shownGame=matched?matched.gameNumber:preview.nextGame;
+  const meta=SESSIONS[preview.sessionId]?SESSIONS[preview.sessionId].label+" — existante":sessionMetaFromId(preview.sessionId).label+" — sera créée";
+  const rows=[["Soirée",meta],["Game",shownGame],["Map",preview.map],["Joueurs",players],["Vainqueur",preview.win.winner||"À vérifier"],["Méthode",preview.win.method||"À vérifier"],["Logger",preview.data.LoggerVersion||"inconnue"]];
+  if(matched&&Array.isArray(matched.sources)&&matched.sources.length)rows.push(["Sources déjà fusionnées",matched.sources.join(", ")]);
   box.hidden=false;
-  box.innerHTML=rows.map(function(row){
-    return '<div class="card"><span>'+esc(row[0])+'</span><strong>'+row[1]+'</strong></div>';
-  }).join("");
-  warn.innerHTML=preview.warnings.length
-    ?preview.warnings.map(function(w){return "<div>⚠ "+esc(w)+"</div>"}).join("")
-    :"Aucune anomalie évidente détectée.";
-  confirmButton.disabled=!!preview.duplicate;
+  box.innerHTML=rows.map(function(row){return '<div class="card"><span>'+esc(row[0])+'</span><strong>'+row[1]+'</strong></div>'}).join("");
+  let extra=preview.warnings.slice();
+  if(preview.comparison&&preview.comparison.richer&&preview.comparison.details.length)extra=extra.concat(preview.comparison.details.map(function(x){return "+ "+x}));
+  warn.innerHTML=extra.length?extra.map(function(w){return "<div>⚠ "+esc(w)+"</div>"}).join(""):"Aucune anomalie évidente détectée.";
+  if(preview.match&&preview.match.kind==="exact"){confirmButton.disabled=true;confirmButton.textContent="Game déjà importée";}
+  else if(preview.match&&preview.match.kind==="same_game"){
+    confirmButton.disabled=!(preview.comparison&&preview.comparison.richer);
+    confirmButton.textContent=preview.comparison&&preview.comparison.richer?"Compléter la Game "+preview.match.info.gameNumber:"Aucune info nouvelle";
+  }else{confirmButton.disabled=false;confirmButton.textContent="Importer cette game"}
 }
 function crewtestImportData(preview){
   const data=preview.data;
@@ -724,9 +930,10 @@ function crewtestImportData(preview){
   });
 
   TEST_IMPORTS[preview.fingerprint]={
-    fingerprint:preview.fingerprint,sessionId:sessionId,gameNumber:gameNumber,
+    fingerprint:preview.fingerprint,fingerprints:[preview.fingerprint],
+    sessionId:sessionId,gameNumber:gameNumber,
     startedAt:data.StartedAt,map:preview.map,playerKey:preview.playerKey,
-    loggerVersion:data.LoggerVersion||"",raw:data
+    loggerVersion:data.LoggerVersion||"",sources:preview.sourceName?[preview.sourceName]:[],raw:data
   };
   crewtestSaveState();
 
@@ -762,9 +969,14 @@ function crewtestInitImporter(){
     if(!selected)return;
     try{
       const data=JSON.parse(await selected.text());
-      pendingJsonImport=crewtestBuildPreview(data);
+      pendingJsonImport=crewtestBuildPreview(data,selected.name);
       crewtestRenderPreview(pendingJsonImport);
-      if(status)status.textContent=pendingJsonImport.duplicate?"Import bloqué : doublon probable.":"Prévisualisation prête.";
+      if(status){
+        if(pendingJsonImport.match&&pendingJsonImport.match.kind==="exact")status.textContent="Import bloqué : cette source est déjà connue.";
+        else if(pendingJsonImport.match&&pendingJsonImport.match.kind==="same_game"&&pendingJsonImport.comparison&&pendingJsonImport.comparison.richer)status.textContent="Même game détectée : elle peut être complétée.";
+        else if(pendingJsonImport.match&&pendingJsonImport.match.kind==="same_game")status.textContent="Même game détectée : aucune information nouvelle.";
+        else status.textContent="Prévisualisation prête.";
+      }
     }catch(error){
       const box=document.getElementById("json-import-preview");if(box)box.hidden=true;
       const warnings=document.getElementById("json-import-warnings");if(warnings)warnings.textContent="Erreur : "+error.message;
@@ -772,10 +984,17 @@ function crewtestInitImporter(){
     }
   });
   confirmButton.addEventListener("click",function(){
-    if(!pendingJsonImport||pendingJsonImport.duplicate)return;
-    const result=crewtestImportData(pendingJsonImport);
-    if(status)status.textContent="Importé : soirée "+SESSIONS[result.sessionId].label+", Game "+result.gameNumber+".";
+    if(!pendingJsonImport)return;
+    let result=null;
+    if(pendingJsonImport.match&&pendingJsonImport.match.kind==="same_game"&&pendingJsonImport.comparison&&pendingJsonImport.comparison.richer){
+      result=crewtestMergeIntoGame(pendingJsonImport);
+      if(status)status.textContent="Game "+result.gameNumber+" complétée avec les nouvelles informations.";
+    }else if(!pendingJsonImport.match){
+      result=crewtestImportData(pendingJsonImport);
+      if(status)status.textContent="Importé : soirée "+SESSIONS[result.sessionId].label+", Game "+result.gameNumber+".";
+    }else return;
     confirmButton.disabled=true;
+    confirmButton.textContent="Import terminé";
     pendingJsonImport=null;
   });
   clear.addEventListener("click",function(){
