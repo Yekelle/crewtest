@@ -501,13 +501,26 @@ function crewtestFingerprint(data){
 function crewtestFindDuplicate(data){
   const fp=crewtestFingerprint(data);
   if(TEST_IMPORTS[fp])return TEST_IMPORTS[fp];
+
   const start=crewtestTs(data&&data.StartedAt);
+  const finish=crewtestTs(data&&data.FinishedAt);
   const map=crewtestNormalizeMap(data&&data.Map);
   const key=crewtestPlayerKey(data);
+  const winner=String((data&&data.WinnerReason)||"");
+
   return Object.values(TEST_IMPORTS).find(function(x){
     if(!x)return false;
-    const other=crewtestTs(x.startedAt);
-    return x.map===map&&x.playerKey===key&&start!==null&&other!==null&&Math.abs(start-other)<=30000;
+
+    const otherStart=crewtestTs(x.startedAt);
+    const raw=x.raw||{};
+    const otherFinish=crewtestTs(raw.FinishedAt);
+    const otherWinner=String(raw.WinnerReason||"");
+
+    const sameStart=start!==null&&otherStart!==null&&Math.abs(start-otherStart)<=8000;
+    const sameFinish=finish!==null&&otherFinish!==null&&Math.abs(finish-otherFinish)<=8000;
+    const sameWinner=winner&&otherWinner&&winner===otherWinner;
+
+    return x.map===map&&x.playerKey===key&&sameStart&&sameFinish&&sameWinner;
   })||null;
 }
 function crewtestSaveState(){
