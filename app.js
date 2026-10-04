@@ -630,6 +630,61 @@ function crewtestMergeRaw(existingRaw,incomingRaw){
   merged.Meetings=Array.from(meetingMap.values()).sort(function(a,b){return Number(a.Number||0)-Number(b.Number||0)});
   return merged;
 }
+function crewtestRepairCounts(data){
+  const events=(Array.isArray(data&&data.Events)?data.Events:[])
+    .map(function(e){return Object.assign({},e,{_ts:crewtestTs(e.Timestamp)})})
+    .filter(function(e){return e._ts!==null})
+    .sort(function(a,b){return a._ts-b._ts});
+  const meetings=(Array.isArray(data&&data.Meetings)?data.Meetings:[])
+    .map(function(m){return crewtestTs(m.StartedAt)})
+    .filter(function(x){return x!==null})
+    .sort(function(a,b){return a-b});
+  const counts=new Map();
+
+  function systemsFor(sab){
+    if(sab==="Réacteur")return new Set(["Reactor","Laboratory"]);
+    if(sab==="Lumières")return new Set(["Electrical"]);
+    if(sab==="Oxygène")return new Set(["LifeSupp"]);
+    if(sab==="Radio")return new Set(["Comms"]);
+    if(sab==="Sismiques")return new Set(["HeliSabotage","Laboratory","Reactor"]);
+    if(sab==="Champignon")return new Set(["MushroomMixupSabotage"]);
+    if(sab==="Portes")return new Set(["Doors"]);
+    return new Set();
+  }
+
+  const starts=events.filter(function(e){return e.Type==="sabotage_start"});
+  starts.forEach(function(start){
+    const sab=crewtestSabotageName(start);
+    if(!sab)return;
+    const allowed=systemsFor(sab);
+    if(!allowed.size)return;
+
+    const endEvent=events.find(function(e){
+      return e._ts>start._ts&&e.Type==="sabotage_end";
+    });
+    const meetingTime=meetings.find(function(t){return t>start._ts});
+    let endTs=endEvent?endEvent._ts:Infinity;
+    if(meetingTime!==undefined&&meetingTime<endTs)endTs=meetingTime;
+
+    const participants=new Set();
+    events.forEach(function(e){
+      if(e._ts<start._ts||e._ts>endTs)return;
+      if(e.Type!=="system_update"||!e.Player||!allowed.has(String(e.System||"")))return;
+      const amount=Number(e.Amount);
+      // 128 = déclenchement du sabotage ; 16 = reset/nettoyage au meeting.
+      if(amount===128||amount===16)return;
+      const name=crewtestBaseName(e.Player,data);
+      if(name)participants.add(name);
+    });
+
+    participants.forEach(function(name){
+      counts.set(name,(counts.get(name)||0)+1);
+    });
+  });
+
+  return counts;
+}
+
 function crewtestDeriveGame(data){
   const events=Array.isArray(data&&data.Events)?data.Events:[];
   const meetings=Array.isArray(data&&data.Meetings)?data.Meetings:[];
@@ -658,6 +713,7 @@ function crewtestDeriveGame(data){
     if(killed&&killed.killer===reporter)selfCounts.set(reporter,(selfCounts.get(reporter)||0)+1);
     else reportCounts.set(reporter,(reportCounts.get(reporter)||0)+1);
   });
+  const repairCounts=crewtestRepairCounts(data);
   const sabotageByPlayer=new Map();
   events.filter(function(e){return e.Type==="sabotage_start"}).forEach(function(start){
     const sab=crewtestSabotageName(start);if(!sab)return;
@@ -687,7 +743,7 @@ function crewtestDeriveGame(data){
       turn=1+meetingTimes.filter(function(mt){return deathEvent.ts!==null&&mt<deathEvent.ts}).length;
     }else if(exiled.has(name))death="Éjecté au conseil";
     const sabotages=sabotageByPlayer.get(name)||[];
-    return {name:name,role:role,reports:reportCounts.get(name)||0,self:selfCounts.get(name)||0,sabotages:sabotages,kills:kills,death:death,deathPos:deathPos,turn:turn,tasks:role==="Crew"?Number(p.TasksCompleted||0):null,totalTasks:role==="Crew"?Number(p.TasksTotal||0):null,ejected:exiled.has(name)};
+    return {name:name,role:role,reports:reportCounts.get(name)||0,self:selfCounts.get(name)||0,sabotages:sabotages,repair:repairCounts.get(name)||0,kills:kills,death:death,deathPos:deathPos,turn:turn,tasks:role==="Crew"?Number(p.TasksCompleted||0):null,totalTasks:role==="Crew"?Number(p.TasksTotal||0):null,ejected:exiled.has(name)};
   });
   const t1Deaths=killEvents.filter(function(e){return e.ts!==null&&!meetingTimes.some(function(mt){return mt<e.ts})}).length;
   return {rows:rows,t1Deaths:t1Deaths,win:crewtestWinnerInfo(data.WinnerReason),map:crewtestNormalizeMap(data.Map)};
@@ -705,6 +761,7 @@ function crewtestMergeIntoGame(preview){
     r.role=row.role;
     r.reports=Math.max(Number(r.reports||0),row.reports);
     r.self=Math.max(Number(r.self||0),row.self);
+    r.repair=Math.max(Number(r.repair||0),Number(row.repair||0));
     if(row.sabotages.length>=Number(r.sab||0)){r.sabotages=row.sabotages.slice();r.sab=row.sabotages.length}
     if(row.kills.length>=(Array.isArray(r.kills)?r.kills.length:0))r.kills=row.kills.slice();
     if(r.death==="Survit"&&row.death!=="Survit")r.death=row.death;
@@ -869,6 +926,7 @@ function crewtestImportData(preview){
     else reportCounts.set(reporter,(reportCounts.get(reporter)||0)+1);
   });
 
+  const repairCounts=crewtestRepairCounts(data);
   const sabotageByPlayer=new Map();
   events.filter(function(e){return e.Type==="sabotage_start"}).forEach(function(start){
     const sab=crewtestSabotageName(start);
@@ -921,7 +979,7 @@ function crewtestImportData(preview){
     RECORDS.push({
       id:"test-record-"+preview.fingerprint+"-"+i,gameId:gameId,session:sessionId,p:name,g:gameNumber,role:role,
       reports:reportCounts.get(name)||0,self:selfCounts.get(name)||0,
-      sab:sabotages.length,sabotages:sabotages,repair:0,
+      sab:sabotages.length,sabotages:sabotages,repair:repairCounts.get(name)||0,
       kills:role==="Imposteur"?kills:[],death:death,deathPos:deathPos,turn:turn,
       tasks:role==="Crew"?Number(p.TasksCompleted||0):null,
       totalTasks:role==="Crew"?Number(p.TasksTotal||0):null,
@@ -1023,7 +1081,7 @@ function renderStats(){
  document.getElementById("impo-methods").innerHTML=im.map(([m,n])=>`<b>${m}</b> ${n} (${pct(n,iw.length)})`).join(" • ");
  document.getElementById("crew-methods").innerHTML=`<b>Quêtes</b> ${cr[0][1]} (${pct(cr[0][1],cw.length)}) • <b>Élimination</b> ${cr[1][1]} (${pct(cr[1][1],cw.length)})`;
 
- const tracked=sortedPlayers().map(p=>{const rr=recs.filter(r=>r.p===p.name),imp=rr.filter(r=>r.role==="Imposteur"),crew=rr.filter(r=>r.role==="Crew"),taskRows=crew.filter(r=>Number.isFinite(r.tasks)&&Number(r.totalTasks||9)>0),taskDone=taskRows.reduce((a,r)=>a+Number(r.tasks||0),0),taskTotal=taskRows.reduce((a,r)=>a+Number(r.totalTasks||9),0);return{name:p.name,rr,imp,crew,impWins:imp.filter(r=>resultFor(r)==="Victoire").length,crewWins:crew.filter(r=>resultFor(r)==="Victoire").length,impEjected:imp.filter(r=>r.ejected).length,crewEjected:crew.filter(r=>r.ejected).length,kills:rr.reduce((a,r)=>a+(r.kills?.length||0),0),maxKills:Math.max(0,...rr.map(r=>r.kills?.length||0)),t1:crew.filter(r=>r.turn===1).length,firstDeath:crew.filter(r=>r.deathPos===1).length,repairs:crew.reduce((a,r)=>a+(Number.isFinite(r.repair)?r.repair:0),0),taskGames:taskRows.length,taskDone,taskTotal,taskRate:taskTotal?taskDone/taskTotal:null}}).filter(x=>x.rr.length);
+ const tracked=sortedPlayers().map(p=>{const rr=recs.filter(r=>r.p===p.name),imp=rr.filter(r=>r.role==="Imposteur"),crew=rr.filter(r=>r.role==="Crew"),taskRows=crew.filter(r=>Number.isFinite(r.tasks)&&Number(r.totalTasks||9)>0),taskDone=taskRows.reduce((a,r)=>a+Number(r.tasks||0),0),taskTotal=taskRows.reduce((a,r)=>a+Number(r.totalTasks||9),0);return{name:p.name,rr,imp,crew,impWins:imp.filter(r=>resultFor(r)==="Victoire").length,crewWins:crew.filter(r=>resultFor(r)==="Victoire").length,impEjected:imp.filter(r=>r.ejected).length,crewEjected:crew.filter(r=>r.ejected).length,kills:rr.reduce((a,r)=>a+(r.kills?.length||0),0),maxKills:Math.max(0,...rr.map(r=>r.kills?.length||0)),t1:crew.filter(r=>r.turn===1).length,firstDeath:crew.filter(r=>r.deathPos===1).length,repairs:rr.reduce((a,r)=>a+(Number.isFinite(r.repair)?r.repair:0),0),taskGames:taskRows.length,taskDone,taskTotal,taskRate:taskTotal?taskDone/taskTotal:null}}).filter(x=>x.rr.length);
  if(!tracked.length){document.getElementById("hall").innerHTML="";document.getElementById("shame").innerHTML="";document.getElementById("t1-rows").innerHTML="";document.getElementById("mentions").innerHTML="";document.getElementById("t1-average").textContent="0 Crewmate";return}
  const impP=tracked.filter(x=>x.imp.length),crewP=tracked.filter(x=>x.crew.length),taskEligible=tracked.filter(x=>x.taskGames>=3&&x.taskRate!==null);
  const bestTaskRate=taskEligible.length?Math.max(...taskEligible.map(x=>x.taskRate)):null,worstTaskRate=taskEligible.length?Math.min(...taskEligible.map(x=>x.taskRate)):null,bestTasks=taskEligible.filter(x=>x.taskRate===bestTaskRate),worstTasks=taskEligible.filter(x=>x.taskRate===worstTaskRate);
@@ -1100,7 +1158,7 @@ function renderPlayer(){
  const all=RECORDS.filter(r=>r.p===currentPlayer);let rr=currentPlayerMode==="all"?all:currentPlayerMode==="month"?all.filter(r=>SESSIONS[r.session]?.month===currentPlayerMonth):all.filter(r=>r.session===currentPlayerMode);
  document.getElementById("p-name").textContent=p.name;const twitchLink=document.getElementById("p-handle");twitchLink.textContent="@"+p.handle+" ↗";twitchLink.href="https://www.twitch.tv/"+encodeURIComponent(p.handle);twitchLink.setAttribute("aria-label","Ouvrir la chaîne Twitch de "+p.name);document.getElementById("p-state").textContent=all.length?"Données présentes":"Aucune grille détaillée";
  if(!all.length){document.getElementById("p-summary").innerHTML=`<div class="card"><span>Statut</span><strong>Pas de données</strong></div>`;document.getElementById("p-stats").innerHTML=`<div class="kv-item"><span>Info</span><strong>Aucune grille fournie dans cette démo.</strong></div>`;document.getElementById("p-maps").innerHTML="";document.getElementById("p-sabotage").innerHTML="";document.getElementById("p-games").innerHTML="";return}
- const wins=rr.filter(r=>resultFor(r)==="Victoire").length,imp=rr.filter(r=>r.role==="Imposteur"),crew=rr.filter(r=>r.role==="Crew"),kills=rr.reduce((a,r)=>a+(r.kills?.length||0),0),reports=rr.reduce((a,r)=>a+(r.reports||0),0),repairs=crew.reduce((a,r)=>a+(Number.isFinite(r.repair)?r.repair:0),0),fav=favoriteSabotage(imp);
+ const wins=rr.filter(r=>resultFor(r)==="Victoire").length,imp=rr.filter(r=>r.role==="Imposteur"),crew=rr.filter(r=>r.role==="Crew"),kills=rr.reduce((a,r)=>a+(r.kills?.length||0),0),reports=rr.reduce((a,r)=>a+(r.reports||0),0),repairs=rr.reduce((a,r)=>a+(Number.isFinite(r.repair)?r.repair:0),0),fav=favoriteSabotage(imp);
  document.getElementById("p-summary").innerHTML=[["Games",rr.length],["Victoires",wins],["Kills",kills],["Reports",reports],["Réparations",repairs]].map(([a,b])=>`<div class="card"><span>${a}</span><strong>${b}</strong></div>`).join("");
  document.getElementById("p-stats").innerHTML=[["Winrate global",pct(wins,rr.length)],["Winrate Crew",pct(crew.filter(r=>resultFor(r)==="Victoire").length,crew.length)],["Winrate Imposteur",pct(imp.filter(r=>resultFor(r)==="Victoire").length,imp.length)],["Part Crew",pct(crew.length,rr.length)],["Morts T1",crew.filter(r=>r.turn===1).length],["Éjections Crew",crew.filter(r=>r.ejected).length],["Éjections Imposteur",imp.filter(r=>r.ejected).length],["Sabotages",rr.reduce((a,r)=>a+(r.sab||0),0)]].map(([a,b])=>`<div class="kv-item"><span>${esc(a)}</span><strong>${esc(String(b))}</strong></div>`).join("");
  const maps={};imp.forEach(r=>{const g=gameFor(r);if(g)maps[g.map]=(maps[g.map]||0)+1});document.getElementById("p-maps").innerHTML=Object.keys(maps).length?Object.entries(maps).map(([m,n])=>`<div class="map-row"><span>${esc(m)}</span><strong>${n}</strong></div>`).join(""):`<div class="map-row"><span>Aucune game en Imposteur</span><strong>0</strong></div>`;document.getElementById("p-sabotage").innerHTML=`<span>Sabotage préféré en Imposteur</span><strong>${esc(fav?fav.name:(imp.some(r=>(r.sab||0)>0)?"Non renseigné":"Aucun"))}</strong>`;
