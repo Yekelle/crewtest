@@ -783,6 +783,25 @@ function crewtestMergeIntoGame(preview){
   crewtestRefreshAll(match.sessionId);
   return {sessionId:match.sessionId,gameNumber:match.gameNumber};
 }
+function crewtestRecalculateImportedRepairs(){
+  let changed=false;
+  Object.values(TEST_IMPORTS).filter(Boolean).forEach(function(info){
+    if(!info.raw)return;
+    const derived=crewtestDeriveGame(info.raw);
+    const game=GAMES.find(function(g){
+      return g.session===info.sessionId&&Number(g.n)===Number(info.gameNumber);
+    });
+    if(!game)return;
+    derived.rows.forEach(function(row){
+      const r=RECORDS.find(function(x){return x.gameId===game.id&&x.p===row.name});
+      if(!r)return;
+      const next=Math.max(Number(r.repair||0),Number(row.repair||0));
+      if(next!==Number(r.repair||0)){r.repair=next;changed=true}
+    });
+  });
+  if(changed)crewtestSaveState();
+}
+
 function crewtestSaveState(){
   if(!TEST_MODE)return;
   localStorage.setItem(CREWTEST_STORAGE_KEY,JSON.stringify({
@@ -1551,6 +1570,7 @@ async function startApp(){
     authRole="admin";
 
     crewtestLoadState();
+    crewtestRecalculateImportedRepairs();
 
     const entryNav=document.querySelector('.nav[data-view="entry"]');
     if(entryNav)entryNav.hidden=false;
