@@ -1,9 +1,15 @@
-const SUPABASE_URL="https://qonkgfbxmtmmwdjzyxuf.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY="sb_publishable_mwxOhhD8qUEU66MR5lziYw_441p5KRR";
+const TEST_MODE = true;
+
+const SUPABASE_URL = "";
+const SUPABASE_PUBLISHABLE_KEY = "";
+
 const AUTH_HASH_PARAMS=new URLSearchParams(window.location.hash.replace(/^#/,""));
 const AUTH_QUERY_PARAMS=new URLSearchParams(window.location.search);
 let authSetupRequested=["invite","recovery"].includes(AUTH_HASH_PARAMS.get("type"))||["invite","recovery"].includes(AUTH_QUERY_PARAMS.get("type"));
-const supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+
+const supabaseClient = TEST_MODE
+  ? null
+  : window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 let authUser=null;
 let authRole=null;
 let authLoading=true;
@@ -848,26 +854,68 @@ async function deleteAdminRecord(index){
 }
 
 document.getElementById("account-setup-form")?.addEventListener("submit",handleAccountSetup);
-supabaseClient.auth.onAuthStateChange((event,session)=>{
-  if(event==="PASSWORD_RECOVERY")authSetupRequested=true;
-  setTimeout(()=>refreshAdminAuth(session||null),0);
-});
+if(!TEST_MODE){
+  supabaseClient.auth.onAuthStateChange((event,session)=>{
+    if(event==="PASSWORD_RECOVERY")authSetupRequested=true;
+    setTimeout(()=>refreshAdminAuth(session||null),0);
+  });
+}
 document.getElementById("admin-add-session-btn").addEventListener("click",addAdminSession);document.getElementById("admin-participant-session").addEventListener("change",renderAdminParticipants);document.getElementById("clear-participants-btn").addEventListener("click",clearAdminParticipants);document.getElementById("save-participants-btn").addEventListener("click",saveAdminParticipants);document.getElementById("admin-add-player-btn").addEventListener("click",addAdminPlayer);document.getElementById("admin-cancel-player-edit").addEventListener("click",resetAdminPlayerForm);
 document.getElementById("admin-reset").addEventListener("click",async()=>{if(!requireEditor())return;try{await reloadPublicData();const status=document.getElementById("admin-manage-session-status");if(status&&!status.closest("#admin-only-tools")?.hidden)status.textContent="Données rechargées depuis Supabase."}catch(error){alert("Erreur Supabase : "+error.message)}});
 /* ===== Initialisation et rendu global ===== */
 function renderAll(){renderStats();renderSessions();renderPlayerList();syncPlayerMonth();renderPlayerTabs();renderPlayer()}
 async function startApp(){
+
+  if(TEST_MODE){
+    authLoading=false;
+    authUser=null;
+    authRole=null;
+
+    SESSIONS={};
+    DEFAULT_SESSION_PARTICIPANTS={};
+    RECORDS=[];
+    GAMES=[];
+    SESSION_PARTICIPANTS={};
+    PLAYERS=[];
+
+    const main=document.querySelector("main");
+
+    if(main){
+      main.innerHTML=`
+        <section class="view active">
+          <article class="panel">
+            <div class="section-title">
+              <span class="section-icon">🧪</span>
+              <h2>CREWTEST</h2>
+            </div>
+
+            <p>Mode laboratoire actif.</p>
+
+            <p class="muted">
+              Cette copie n'est connectée à aucun projet Supabase.
+              Les tests JSON effectués ici ne peuvent pas modifier Crew'mong Us.
+            </p>
+          </article>
+        </section>
+      `;
+    }
+
+    return;
+  }
+
   try{
     await loadFromSupabase();
   }catch(error){
     console.error("Crew'mong Us : impossible de charger les données Supabase.",error);
     const main=document.querySelector("main");
-    if(main)main.innerHTML=`<section class="view active"><article class="panel"><div class="section-title"><span class="section-icon">!</span><h2>Données indisponibles</h2></div><p>Impossible de charger les données depuis Supabase. Aucune sauvegarde locale n’est affichée afin d’éviter de présenter des données périmées.</p><p class="muted">Recharge la page dans quelques instants.</p></article></section>`;
+    if(main)main.innerHTML=`<section class="view active"><article class="panel"><div class="section-title"><span class="section-icon">!</span><h2>Données indisponibles</h2></div><p>Impossible de charger les données depuis Supabase.</p></article></section>`;
     return;
   }
+
   refreshSessionSelectors();
   initEntry();
   renderAll();
   await refreshAdminAuth();
 }
+
 startApp();
