@@ -547,12 +547,15 @@ function crewtestFindDuplicate(data){
   if(exact)return {kind:"exact",info:exact};
 
   const start=crewtestTs(data&&data.StartedAt);
+  const finish=crewtestTs(data&&data.FinishedAt);
   const core=crewtestCoreSignature(data);
   const same=all.find(function(x){
     const raw=x.raw||{};
     const otherStart=crewtestTs(x.startedAt||raw.StartedAt);
-    const closeInTime=start!==null&&otherStart!==null&&Math.abs(start-otherStart)<=120000;
-    return closeInTime&&crewtestCoreSignature(raw)===core;
+    const otherFinish=crewtestTs(raw.FinishedAt);
+    const closeStart=start!==null&&otherStart!==null&&Math.abs(start-otherStart)<=20000;
+    const closeFinish=finish===null||otherFinish===null||Math.abs(finish-otherFinish)<=20000;
+    return closeStart&&closeFinish&&crewtestCoreSignature(raw)===core;
   });
   return same?{kind:"same_game",info:same}:null;
 }
