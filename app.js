@@ -935,6 +935,15 @@ function crewtestBuildPreview(data,sourceName){
     fingerprint:crewtestFingerprint(data),map:crewtestNormalizeMap(data.Map),playerKey:crewtestPlayerKey(data),win:win
   };
 }
+function crewtestFormatDateTime(value){
+  const ts=crewtestTs(value);
+  if(ts===null)return "—";
+  return new Intl.DateTimeFormat("fr-FR",{
+    day:"2-digit",month:"2-digit",year:"numeric",
+    hour:"2-digit",minute:"2-digit",second:"2-digit"
+  }).format(new Date(ts));
+}
+
 function crewtestRenderPreview(preview){
   const box=document.getElementById("json-import-preview");
   const warn=document.getElementById("json-import-warnings");
@@ -944,7 +953,18 @@ function crewtestRenderPreview(preview){
   const matched=preview.match&&preview.match.info;
   const shownGame=matched?matched.gameNumber:preview.nextGame;
   const meta=SESSIONS[preview.sessionId]?SESSIONS[preview.sessionId].label+" — existante":sessionMetaFromId(preview.sessionId).label+" — sera créée";
-  const rows=[["Soirée",meta],["Game",shownGame],["Map",preview.map],["Joueurs",players],["Vainqueur",preview.win.winner||"À vérifier"],["Méthode",preview.win.method||"À vérifier"],["Logger",preview.data.LoggerVersion||"inconnue"]];
+  const rows=[
+    ["Soirée",meta],
+    ["Game",shownGame+" (ordre chronologique)"],
+    ["Début",crewtestFormatDateTime(preview.data.StartedAt)],
+    ["Fin",crewtestFormatDateTime(preview.data.FinishedAt)],
+    ["Map",preview.map],
+    ["Joueurs",players],
+    ["Vainqueur",preview.win.winner||"À vérifier"],
+    ["Méthode",preview.win.method||"À vérifier"],
+    ["Logger",preview.data.LoggerVersion||"inconnue"],
+    ["Source",preview.sourceName||"fichier local"]
+  ];
   if(matched&&Array.isArray(matched.sources)&&matched.sources.length)rows.push(["Sources déjà fusionnées",matched.sources.join(", ")]);
   box.hidden=false;
   box.innerHTML=rows.map(function(row){return '<div class="card"><span>'+esc(row[0])+'</span><strong>'+row[1]+'</strong></div>'}).join("");
@@ -1089,6 +1109,30 @@ function crewtestImportData(preview){
   const importedGame=GAMES.find(function(g){return g.id===gameId});
   return {sessionId:sessionId,gameNumber:importedGame?importedGame.n:gameNumber};
 }
+function crewtestExportState(){
+  const payload={
+    format:"crewtest-local-state",
+    version:1,
+    exportedAt:new Date().toISOString(),
+    sessions:SESSIONS,
+    games:GAMES,
+    records:RECORDS,
+    players:PLAYERS,
+    participants:SESSION_PARTICIPANTS,
+    imports:TEST_IMPORTS
+  };
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  const stamp=new Date().toISOString().replace(/[:.]/g,"-");
+  a.href=url;
+  a.download="crewtest-export-"+stamp+".json";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(function(){URL.revokeObjectURL(url)},1000);
+}
+
 function crewtestReset(){
   localStorage.removeItem(CREWTEST_STORAGE_KEY);
   SESSIONS={};GAMES=[];RECORDS=[];PLAYERS=[];SESSION_PARTICIPANTS={};TEST_IMPORTS={};
@@ -1103,9 +1147,14 @@ function crewtestReset(){
 function crewtestInitImporter(){
   const file=document.getElementById("json-import-file");
   const confirmButton=document.getElementById("json-import-confirm");
+  const exportButton=document.getElementById("json-import-export");
   const clear=document.getElementById("json-import-clear");
   const status=document.getElementById("json-import-status");
   if(!file||!confirmButton||!clear)return;
+  if(exportButton)exportButton.addEventListener("click",function(){
+    crewtestExportState();
+    if(status)status.textContent="Export local créé.";
+  });
   file.addEventListener("change",async function(){
     pendingJsonImport=null;
     confirmButton.disabled=true;
@@ -1555,6 +1604,32 @@ async function deleteAdminPlayer(name){
   }catch(error){status.textContent="Erreur Supabase : "+error.message}
 }
 
+function deleteCrewtestGame(gameId){
+  if(!TEST_MODE||!requireAdmin())return;
+  const game=GAMES.find(function(g){return g.id===gameId});
+  if(!game)return;
+  const sessionId=game.session;
+  const label=(SESSIONS[sessionId]&&SESSIONS[sessionId].label)||sessionId;
+  const recordCount=RECORDS.filter(function(r){return r.gameId===gameId}).length;
+  if(!window.confirm("Supprimer entièrement la Game "+game.n+" du "+label+" ?\n\n"+recordCount+" fiche(s) joueur seront supprimée(s), ainsi que les empreintes JSON associées.\n\nCette action est irréversible."))return;
+
+  RECORDS=RECORDS.filter(function(r){return r.gameId!==gameId});
+  GAMES=GAMES.filter(function(g){return g.id!==gameId});
+
+  for(const key of Object.keys(TEST_IMPORTS)){
+    const info=TEST_IMPORTS[key];
+    if(!info)continue;
+    const sameFingerprint=info.fingerprint===game.fingerprint||
+      (Array.isArray(info.fingerprints)&&info.fingerprints.includes(game.fingerprint));
+    const sameLegacy=info.sessionId===sessionId&&Number(info.gameNumber)===Number(game.n);
+    if(sameFingerprint||sameLegacy)delete TEST_IMPORTS[key];
+  }
+
+  crewtestRenumberSession(sessionId);
+  crewtestSaveState();
+  crewtestRefreshAll(sessionId);
+}
+
 function renderAdmin(){
   if(!editorCanWrite()){renderAdminAccess();return}
   const isAdmin=adminCanWrite();
@@ -1562,13 +1637,20 @@ function renderAdmin(){
   if(adminOnly)adminOnly.hidden=!isAdmin;
   if(isAdmin){renderAdminPlayers();renderAdminSessions();renderAdminParticipants()}
   const box=document.getElementById("admin-list"),sorted=[...RECORDS].sort((a,b)=>b.session.localeCompare(a.session)||b.g-a.g||a.p.localeCompare(b.p));
+  const gameButtons=new Set();
   box.innerHTML=sorted.map(r=>{
     const idx=RECORDS.indexOf(r),g=gameFor(r);
-    const deleteButton=isAdmin?`<button class="danger admin-delete-record" data-i="${idx}" type="button">Supprimer</button>`:"";
-    return `<div class="admin-item"><div><strong>${esc(r.p)} • ${esc(SESSIONS[r.session]?.label||r.session)} • Game ${r.g}</strong><small>${esc(g?.map||"—")} • ${esc(r.role)} • ${resultFor(r)}</small></div><div class="admin-item-actions"><button class="secondary admin-edit-record" data-i="${idx}" type="button">Modifier</button>${deleteButton}</div></div>`;
+    const deleteButton=isAdmin?`<button class="danger admin-delete-record" data-i="${idx}" type="button">Supprimer fiche</button>`:"";
+    let deleteGameButton="";
+    if(TEST_MODE&&isAdmin&&g&&!gameButtons.has(g.id)){
+      gameButtons.add(g.id);
+      deleteGameButton=`<button class="danger admin-delete-game" data-game-id="${esc(g.id)}" type="button">Supprimer la game</button>`;
+    }
+    return `<div class="admin-item"><div><strong>${esc(r.p)} • ${esc(SESSIONS[r.session]?.label||r.session)} • Game ${r.g}</strong><small>${esc(g?.map||"—")} • ${esc(r.role)} • ${resultFor(r)}</small></div><div class="admin-item-actions"><button class="secondary admin-edit-record" data-i="${idx}" type="button">Modifier</button>${deleteButton}${deleteGameButton}</div></div>`;
   }).join("");
   box.querySelectorAll(".admin-edit-record").forEach(b=>b.addEventListener("click",()=>editRecordFromAdmin(Number(b.dataset.i))));
   if(isAdmin)box.querySelectorAll(".admin-delete-record").forEach(b=>b.addEventListener("click",()=>deleteAdminRecord(Number(b.dataset.i))));
+  if(TEST_MODE&&isAdmin)box.querySelectorAll(".admin-delete-game").forEach(b=>b.addEventListener("click",()=>deleteCrewtestGame(b.dataset.gameId)));
 }
 async function deleteAdminRecord(index){
   if(!requireAdmin())return;
