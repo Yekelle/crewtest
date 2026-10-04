@@ -1456,6 +1456,74 @@ document.getElementById("form-role").addEventListener("change",()=>{syncWinnerFr
 document.getElementById("new-game-btn").addEventListener("click",resetManualEntryForNewGame);
 
 /* ===== Administration ===== */
+function crewtestManualUpsert(payload){
+  const session=payload.p_session_id;
+  const gnum=Number(payload.p_game_number);
+  let game=GAMES.find(g=>g.session===session&&Number(g.n)===gnum);
+
+  if(!game){
+    game={
+      id:"manual-game-"+session+"-"+gnum+"-"+Date.now(),
+      session:session,
+      n:gnum,
+      map:payload.p_map,
+      winner:payload.p_winner,
+      method:payload.p_method,
+      t1Deaths:0,
+      manual:true
+    };
+    GAMES.push(game);
+  }else{
+    game.map=payload.p_map;
+    game.winner=payload.p_winner;
+    game.method=payload.p_method;
+  }
+
+  let record=null;
+  if(payload.p_existing_record_id){
+    record=RECORDS.find(r=>r.id===payload.p_existing_record_id)||null;
+  }
+  if(!record){
+    record=RECORDS.find(r=>r.session===session&&r.p===payload.p_player_name&&Number(r.g)===gnum)||null;
+  }
+
+  const values={
+    gameId:game.id,
+    session:session,
+    p:payload.p_player_name,
+    g:gnum,
+    role:payload.p_role,
+    reports:Number(payload.p_reports||0),
+    self:Number(payload.p_self_reports||0),
+    sab:Array.isArray(payload.p_sabotages)?payload.p_sabotages.length:0,
+    sabotages:Array.isArray(payload.p_sabotages)?payload.p_sabotages.slice():[],
+    repair:Number(payload.p_repair||0),
+    kills:Array.isArray(payload.p_kills)?payload.p_kills.slice():[],
+    death:payload.p_death||"Survit",
+    deathPos:payload.p_death_pos===null?null:Number(payload.p_death_pos),
+    turn:payload.p_turn===null?null:Number(payload.p_turn),
+    tasks:payload.p_tasks===null?null:Number(payload.p_tasks),
+    totalTasks:payload.p_total_tasks===null?null:Number(payload.p_total_tasks),
+    ejected:payload.p_ejected===true,
+    note:payload.p_note||"",
+    manual:true
+  };
+
+  if(record)Object.assign(record,values);
+  else{
+    record=Object.assign({id:"manual-record-"+Date.now()+"-"+Math.random().toString(36).slice(2,8)},values);
+    RECORDS.push(record);
+  }
+
+  if(!SESSION_PARTICIPANTS[session])SESSION_PARTICIPANTS[session]=[];
+  if(!SESSION_PARTICIPANTS[session].includes(payload.p_player_name))SESSION_PARTICIPANTS[session].push(payload.p_player_name);
+
+  game.t1Deaths=RECORDS.filter(r=>r.gameId===game.id&&r.role==="Crew"&&Number(r.turn)===1&&r.death&&r.death!=="Survit").length;
+  crewtestSaveState();
+  crewtestRefreshAll(session);
+  return record;
+}
+
 function editRecordFromAdmin(index){
  const r=RECORDS[index];if(!r)return;
  const g=gameFor(r);editingRecordKey={session:r.session,p:r.p,g:r.g};
@@ -1476,10 +1544,9 @@ function editRecordFromAdmin(index){
  const deathMatch=/^Tu(?:é|ée) par (.+)$/.exec(r.death||"");
  if(deathMatch||((r.death||"")!=="Survit"&&!String(r.death||"").startsWith("Éjecté")&&r.death)){addEventRow({type:"death",turn:r.turn,target:deathMatch?.[1]||"",pos:r.deathPos})}
  for(let i=0;i<(r.self||0);i++)addEventRow({type:"self"});
- if(!document.querySelector("#events-list .event-row"))addEventRow();
  document.getElementById("sabotages-list").innerHTML="";
  (r.sabotages||[]).forEach(sabotage=>addSabotageRow({sabotage}));
- updateSabotageCount();syncEntryRolePanels();refreshEventPlayerOptions();
+ updateSabotageCount();updateReportPreview();syncEntryRolePanels();refreshEventPlayerOptions();
  document.getElementById("save-entry-btn").textContent="Enregistrer les modifications";
  document.getElementById("entry-status").textContent=`Modification de ${r.p}, Game ${r.g} du ${SESSIONS[r.session]?.label||r.session}.`;
  document.querySelectorAll(".nav").forEach(x=>x.classList.toggle("active",x.dataset.view==="entry"));
@@ -1512,7 +1579,7 @@ document.getElementById("save-entry-btn").addEventListener("click",async()=>{
     p_reports:Number(document.getElementById("form-reports").value)||0,
     p_self_reports:self,
     p_sabotages:sabotages,
-    p_repair:role==="Crew"?repairs:0,
+    p_repair:repairs,
     p_kills:role==="Imposteur"?kills:[],
     p_death:death,
     p_death_pos:deathPos,
@@ -1528,13 +1595,42 @@ document.getElementById("save-entry-btn").addEventListener("click",async()=>{
   const wasEditing=!!editingRecordKey;
   saveButton.disabled=true;
   try{
-    await adminUpsertRecordInSupabase(payload);
-    editingRecordKey=null;
-    saveButton.textContent="Enregistrer la fiche";
-    await reloadPublicData();
-    document.getElementById("entry-status").textContent=`${wasEditing?"Modifié":"Enregistré"} : ${player}, Game ${gnum}. Les données sont enregistrées dans Supabase.`;
+    if(TEST_MODE){
+      crewtestManualUpsert(payload);
+      editingRecordKey=null;
+      saveButton.textContent="Enregistrer la fiche";
+      const sessionSel=document.getElementById("form-session");
+      ensureSelectValue(sessionSel,session,SESSIONS[session]?.label||session);
+      sessionSel.value=session;
+      populateGameSelect();
+      const gameSel=document.getElementById("form-game");
+      ensureSelectValue(gameSel,gnum,gnum);
+      gameSel.value=String(gnum);
+      syncEntryPlayerOptions();
+      const playerSel=document.getElementById("form-player");
+      ensureSelectValue(playerSel,player,player);
+      playerSel.value=player;
+      document.getElementById("entry-status").textContent=`${wasEditing?"Modifié":"Enregistré"} : ${player}, Game ${gnum}. Données enregistrées localement dans CREWTEST.`;
+    }else{
+      await adminUpsertRecordInSupabase(payload);
+      editingRecordKey=null;
+      saveButton.textContent="Enregistrer la fiche";
+      await reloadPublicData();
+      const sessionSel=document.getElementById("form-session");
+      ensureSelectValue(sessionSel,session,SESSIONS[session]?.label||session);
+      sessionSel.value=session;
+      populateGameSelect();
+      const gameSel=document.getElementById("form-game");
+      ensureSelectValue(gameSel,gnum,gnum);
+      gameSel.value=String(gnum);
+      syncEntryPlayerOptions();
+      const playerSel=document.getElementById("form-player");
+      ensureSelectValue(playerSel,player,player);
+      playerSel.value=player;
+      document.getElementById("entry-status").textContent=`${wasEditing?"Modifié":"Enregistré"} : ${player}, Game ${gnum}. Les données sont enregistrées dans Supabase.`;
+    }
   }catch(error){
-    document.getElementById("entry-status").textContent="Erreur Supabase : "+error.message;
+    document.getElementById("entry-status").textContent=(TEST_MODE?"Erreur CREWTEST : ":"Erreur Supabase : ")+error.message;
   }finally{saveButton.disabled=false}
 });
 
