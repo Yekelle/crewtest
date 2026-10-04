@@ -757,7 +757,7 @@ function crewtestMergeIntoGame(preview){
   const derived=crewtestDeriveGame(merged);
   const game=GAMES.find(function(g){return g.session===match.sessionId&&Number(g.n)===Number(match.gameNumber)});
   if(!game)throw new Error("La game existante n\u0027est plus présente dans CREWTEST.");
-  game.map=derived.map;game.winner=derived.win.winner||game.winner;game.method=derived.win.method||game.method;game.t1Deaths=derived.t1Deaths;
+  game.map=derived.map;game.winner=derived.win.winner||game.winner;game.method=derived.win.method||game.method;game.t1Deaths=derived.t1Deaths;game.startedAt=merged.StartedAt||game.startedAt;
   derived.rows.forEach(function(row){
     const r=RECORDS.find(function(x){return x.gameId===game.id&&x.p===row.name});
     if(!r)return;
