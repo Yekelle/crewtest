@@ -166,6 +166,25 @@
 
   <section id="view-entry" class="view">
     <article class="glass-panel content-panel">
+      <div class="subpanel">
+        <div class="subpanel-head">
+          <div>
+            <h3>Importer un log GameLogger (.json)</h3>
+            <p>CREWTEST analyse le fichier localement, crée la soirée si nécessaire et prépare la game sans contacter Supabase.</p>
+          </div>
+          <label>Fichier JSON
+            <input id="json-import-file" type="file" accept=".json,application/json">
+          </label>
+        </div>
+        <div id="json-import-preview" class="summary" hidden></div>
+        <div id="json-import-warnings" class="muted"></div>
+        <div class="save-row">
+          <button id="json-import-confirm" class="primary" type="button" disabled>Importer cette game</button>
+          <button id="json-import-clear" class="secondary" type="button">Vider les données test</button>
+          <span id="json-import-status"></span>
+        </div>
+      </div>
+      <div class="gap-top"></div>
       <div class="section-head">
         <div><div class="section-title"><span class="section-icon">✎</span><h2>Saisie d’une game</h2></div><p>Chaque fiche peut contenir plusieurs événements et plusieurs sabotages. Enregistrer met à jour les données partagées dans Supabase.</p></div>
         <button id="new-game-btn" class="primary">+ Nouvelle game</button>
