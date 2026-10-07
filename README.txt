@@ -29,3 +29,4 @@ Les statistiques sont affichées dynamiquement par le JavaScript et ne sont pas 
 ## Projet
 
 Version destinée à l’utilisation de Crew’mong Us pour le suivi des sessions, parties et statistiques des joueurs.
+update
