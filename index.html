@@ -155,11 +155,33 @@
         </div>
         <div id="player-session-tabs" class="tabs"></div>
         <div id="p-summary" class="summary"></div>
-        <div class="player-stats-stack">
-          <div class="subpanel"><h3>Statistiques</h3><div id="p-stats" class="kv player-stats-grid"></div></div>
-          <div class="subpanel"><h3>Imposteur : maps & sabotages</h3><div class="player-impostor-grid"><div id="p-maps" class="map-list"></div><div id="p-sabotage" class="favorite-box"></div></div></div>
+        <div id="player-detail-tabs" class="tabs player-detail-tabs" role="tablist" aria-label="Détails de la fiche joueur">
+          <button class="tab active" type="button" data-player-detail="overview">Vue d’ensemble</button>
+          <button class="tab" type="button" data-player-detail="votes">Votes</button>
+          <button class="tab" type="button" data-player-detail="impostor">Imposteur</button>
+          <button class="tab" type="button" data-player-detail="games">Games</button>
         </div>
-        <div class="subpanel gap-top"><h3>Games</h3><div class="table-wrap"><table class="wide-table"><thead><tr><th>Game</th><th>Map</th><th>Rôle</th><th>Résultat</th><th>Fin</th><th>Reports</th><th>Self</th><th>Sabotages</th><th>Réparations</th><th>Kills</th><th>Sortie</th><th>Ordre de mort</th><th>Tour</th><th>Quêtes</th><th>Note</th></tr></thead><tbody id="p-games"></tbody></table></div></div>
+
+        <div id="player-detail-overview" class="player-detail-panel">
+          <div class="player-overview-grid">
+            <div class="subpanel"><h3>Performance</h3><div id="p-overview-performance" class="kv player-stats-grid"></div></div>
+            <div class="subpanel"><h3>Reports & survie</h3><div id="p-overview-reports" class="kv player-stats-grid"></div></div>
+            <div class="subpanel player-overview-wide"><h3>Activité & quêtes</h3><div id="p-overview-activity" class="kv player-stats-grid"></div></div>
+          </div>
+        </div>
+
+        <div id="player-detail-votes" class="player-detail-panel" hidden>
+          <div class="subpanel"><h3>Votes</h3><div id="p-vote-stats" class="kv player-stats-grid"></div></div>
+        </div>
+
+        <div id="player-detail-impostor" class="player-detail-panel" hidden>
+          <div class="subpanel"><h3>Statistiques Imposteur</h3><div id="p-impostor-stats" class="kv player-stats-grid"></div></div>
+          <div class="subpanel gap-top"><h3>Maps & sabotages</h3><div class="player-impostor-grid"><div id="p-maps" class="map-list"></div><div id="p-sabotage" class="favorite-box"></div></div></div>
+        </div>
+
+        <div id="player-detail-games" class="player-detail-panel" hidden>
+          <div class="subpanel"><h3>Games</h3><div class="table-wrap"><table class="wide-table"><thead><tr><th>Game</th><th>Map</th><th>Rôle</th><th>Résultat</th><th>Fin</th><th>Reports</th><th>Self</th><th>Sabotages</th><th>Réparations</th><th>Kills</th><th>Sortie</th><th>Ordre de mort</th><th>Tour</th><th>Quêtes</th><th>Note</th></tr></thead><tbody id="p-games"></tbody></table></div></div>
+        </div>
       </article>
     </div>
   </section>
