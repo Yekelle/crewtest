@@ -513,7 +513,7 @@ footer{position:relative;z-index:1;text-align:center;color:#6f889a;font-size:12p
 .session-deco-yellow{
   width:150px;
   height:auto;
-  left:-150px;
+  left:-170px;
   top:92px;
   transform:rotate(-8deg);
   z-index:8;
