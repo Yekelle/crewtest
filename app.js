@@ -22,7 +22,7 @@ let RECORDS=[],GAMES=[],SESSION_PARTICIPANTS={},PLAYERS=[];
 let TEST_IMPORTS={};
 let pendingJsonImport=null;
 const CREWTEST_STORAGE_KEY="crewtest-json-lab-v1";
-let currentScope=latestMonth(),currentSessionDetailTab="overview",currentSessionId=null,currentPlayer="Bunny_Island",currentPlayerMonth=latestMonth(),currentPlayerMode="month",currentPlayerDetailTab="overview",editingRecordKey=null;
+let currentScope=latestMonth(),currentSessionDetailTab="overview",currentSessionId=null,currentPlayer="",currentPlayerMonth=latestMonth(),currentPlayerMode="month",currentPlayerDetailTab="overview",editingRecordKey=null;
 
 /* ===== Authentification et données Supabase ===== */
 
@@ -1643,7 +1643,9 @@ function setMainPlayerAvatar(player){
 }
 function renderPlayerList(){
  const box=document.getElementById("player-list");
- box.innerHTML=sortedPlayers().map(p=>{
+ const players=sortedPlayers();
+ if(!players.some(p=>p.name===currentPlayer))currentPlayer=players[0]?.name||"";
+ box.innerHTML=players.map(p=>{
    const has=RECORDS.some(r=>r.p===p.name),avatar=crewtestCleanAvatarUrl(p.avatar_url);
    return `<button class="player-btn ${p.name===currentPlayer?"active":""}" data-p="${esc(p.name)}"><div class="player-list-avatar"><b>${esc(crewtestPlayerInitials(p.name))}</b>${avatar?`<img src="${esc(avatar)}" alt="" loading="lazy">`:""}</div><div class="player-btn-copy"><strong>${esc(p.name)}</strong><span>@${esc(p.handle)}${has?" • données":" • aucune grille"}</span></div></button>`
  }).join("");
