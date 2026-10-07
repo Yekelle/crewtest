@@ -131,9 +131,46 @@
         <span class="pill">Crew’mong Us</span>
       </div>
       <div id="session-summary" class="summary"></div>
-      <div class="subpanel">
-        <h3>Résultat des games</h3>
-        <div class="table-wrap"><table><thead><tr><th>Game</th><th>Map</th><th>Camp gagnant</th><th>Méthode</th><th>Morts T1</th></tr></thead><tbody id="session-games"></tbody></table></div>
+      <div id="session-detail-tabs" class="tabs session-detail-tabs" role="tablist" aria-label="Détails de la session">
+        <button class="tab active" type="button" data-session-detail="overview">Vue d’ensemble</button>
+        <button class="tab" type="button" data-session-detail="actions">Actions</button>
+        <button class="tab" type="button" data-session-detail="votes">Votes</button>
+        <button class="tab" type="button" data-session-detail="players">Joueurs</button>
+        <button class="tab" type="button" data-session-detail="games">Games</button>
+      </div>
+
+      <div id="session-detail-overview" class="session-detail-panel">
+        <div class="session-overview-grid">
+          <div class="subpanel"><h3>Résultats</h3><div id="session-overview-results" class="kv player-stats-grid"></div></div>
+          <div class="subpanel"><h3>Participation & survie</h3><div id="session-overview-participation" class="kv player-stats-grid"></div></div>
+        </div>
+      </div>
+
+      <div id="session-detail-actions" class="session-detail-panel" hidden>
+        <div class="subpanel"><h3>Actions de la soirée</h3><div id="session-action-stats" class="kv player-stats-grid"></div></div>
+      </div>
+
+      <div id="session-detail-votes" class="session-detail-panel" hidden>
+        <div class="subpanel"><h3>Votes</h3><div id="session-vote-stats" class="kv player-stats-grid"></div></div>
+      </div>
+
+      <div id="session-detail-players" class="session-detail-panel" hidden>
+        <div class="subpanel">
+          <h3>Comparatif des joueurs</h3>
+          <div class="table-wrap">
+            <table class="session-player-table">
+              <thead><tr><th>Joueur</th><th>Games</th><th>Victoires</th><th>Imposteur</th><th>Kills</th><th>Reports</th><th>Self</th><th>Réparations</th><th>Survie Crew</th><th>Justesse vote</th><th>Quêtes</th></tr></thead>
+              <tbody id="session-players"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="session-detail-games" class="session-detail-panel" hidden>
+        <div class="subpanel">
+          <h3>Résultat des games</h3>
+          <div class="table-wrap"><table><thead><tr><th>Game</th><th>Map</th><th>Camp gagnant</th><th>Méthode</th><th>Morts T1</th></tr></thead><tbody id="session-games"></tbody></table></div>
+        </div>
       </div>
     </article>
   </section>
