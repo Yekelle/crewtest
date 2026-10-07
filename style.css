@@ -524,7 +524,7 @@ footer{position:relative;z-index:1;text-align:center;color:#6f889a;font-size:12p
   height:auto;
   left:auto;
   right:170px;
-  bottom:-10;
+  bottom:0;
   z-index:18;
 }
 
