@@ -450,6 +450,27 @@ function crewtestPlayerInitials(name){
   if(parts.length>1)return (parts[0][0]+parts[1][0]).toUpperCase();
   return parts[0].slice(0,2).toUpperCase();
 }
+function crewtestRenamePlayerReferences(oldName,newName){
+  if(!oldName||!newName||oldName===newName)return;
+  RECORDS.forEach(function(r){
+    if(r.p===oldName)r.p=newName;
+    if(Array.isArray(r.kills))r.kills=r.kills.map(function(k){return k===oldName?newName:k});
+    if(typeof r.death==="string")r.death=r.death.split(oldName).join(newName);
+  });
+  Object.keys(SESSION_PARTICIPANTS).forEach(function(id){
+    if(!Array.isArray(SESSION_PARTICIPANTS[id]))return;
+    SESSION_PARTICIPANTS[id]=Array.from(new Set(SESSION_PARTICIPANTS[id].map(function(n){return n===oldName?newName:n})));
+  });
+  if(currentPlayer===oldName)currentPlayer=newName;
+  if(editingRecordKey&&editingRecordKey.p===oldName)editingRecordKey.p=newName;
+
+  Object.values(TEST_IMPORTS).filter(Boolean).forEach(function(info){
+    if(!info.raw)return;
+    info.playerKey=crewtestPlayerKey(info.raw);
+    const nextFingerprint=crewtestFingerprint(info.raw);
+    info.fingerprints=Array.from(new Set((info.fingerprints||[info.fingerprint]).concat(nextFingerprint?[nextFingerprint]:[]).filter(Boolean)));
+  });
+}
 function activePlayers(){return sortedPlayers().filter(p=>p.active!==false)}
 function playerIsUsed(name){return RECORDS.some(r=>r.p===name||r.kills?.includes(name))||Object.values(SESSION_PARTICIPANTS).some(names=>Array.isArray(names)&&names.includes(name))}
 function participantNamesForSession(session){const saved=SESSION_PARTICIPANTS[session];return Array.isArray(saved)?saved:[]}
@@ -2177,14 +2198,19 @@ function editAdminPlayer(name){
  const p=PLAYERS.find(x=>x.name===name),nameInput=document.getElementById("admin-player-name"),handleInput=document.getElementById("admin-player-handle"),aliasesInput=document.getElementById("admin-player-aliases"),avatarInput=document.getElementById("admin-player-avatar"),button=document.getElementById("admin-add-player-btn"),cancel=document.getElementById("admin-cancel-player-edit"),status=document.getElementById("admin-player-status");
  if(!p)return;
  const used=playerIsUsed(p.name);
- nameInput.value=p.name;handleInput.value=p.handle;if(aliasesInput)aliasesInput.value=crewtestParseAliases(p.aliases).join(", ");if(avatarInput)avatarInput.value=p.avatar_url||"";nameInput.disabled=used;button.textContent="Enregistrer les modifications";button.dataset.editName=p.name;cancel.hidden=false;
- status.textContent=used?"Ce streamer est déjà utilisé : son nom est verrouillé, mais son Twitch, ses alias et sa PP restent modifiables.":"Modifie les informations du streamer puis enregistre.";
+ nameInput.value=p.name;handleInput.value=p.handle;if(aliasesInput)aliasesInput.value=crewtestParseAliases(p.aliases).join(", ");if(avatarInput)avatarInput.value=p.avatar_url||"";
+ nameInput.disabled=!TEST_MODE&&used;
+ button.textContent="Enregistrer les modifications";button.dataset.editName=p.name;cancel.hidden=false;
+ status.textContent=TEST_MODE&&used?"Le nom peut être modifié : CREWTEST mettra à jour les anciennes données et conservera l’ancien nom comme alias.":used?"Ce streamer est déjà utilisé : son nom reste verrouillé tant que la migration Supabase n’est pas prête.":"Modifie les informations du streamer puis enregistre.";
  nameInput.focus();
 }
 async function addAdminPlayer(){
   if(!requireAdmin())return;
   const nameInput=document.getElementById("admin-player-name"),handleInput=document.getElementById("admin-player-handle"),aliasesInput=document.getElementById("admin-player-aliases"),avatarInput=document.getElementById("admin-player-avatar"),button=document.getElementById("admin-add-player-btn"),status=document.getElementById("admin-player-status");
-  const oldName=button.dataset.editName||"",name=nameInput.value.trim(),handle=handleInput.value.trim().replace(/^@+/,""),aliases=crewtestUniqueAliases(name,handle,aliasesInput?aliasesInput.value:""),avatarRaw=avatarInput?avatarInput.value.trim():"",avatarUrl=crewtestCleanAvatarUrl(avatarRaw);
+  const oldName=button.dataset.editName||"",name=nameInput.value.trim(),handle=handleInput.value.trim().replace(/^@+/,"");
+  const requestedAliases=crewtestParseAliases(aliasesInput?aliasesInput.value:"");
+  const aliases=crewtestUniqueAliases(name,handle,oldName&&name!==oldName?requestedAliases.concat([oldName]):requestedAliases);
+  const avatarRaw=avatarInput?avatarInput.value.trim():"",avatarUrl=crewtestCleanAvatarUrl(avatarRaw);
   if(!name||!handle){status.textContent="Renseigne le nom affiché et le pseudo Twitch.";return}
   if(avatarRaw&&!avatarUrl){status.textContent="L’URL de la PP doit commencer par http:// ou https://.";return}
   const conflict=crewtestIdentityConflict(name,handle,aliases,oldName);
@@ -2194,13 +2220,9 @@ async function addAdminPlayer(){
     if(oldName){
       const p=PLAYERS.find(x=>x.name===oldName);if(!p){resetAdminPlayerForm();return}
       const used=playerIsUsed(oldName);
-      if(used&&name!==oldName){status.textContent="Impossible de renommer ce streamer car il est déjà utilisé dans des données.";return}
+      if(!TEST_MODE&&used&&name!==oldName){status.textContent="Impossible de renommer ce streamer utilisé tant que la migration Supabase n’est pas prête.";return}
       p.name=name;p.handle=handle;p.aliases=aliases;p.avatar_url=avatarUrl;
-      if(name!==oldName){
-        RECORDS.forEach(r=>{if(r.p===oldName)r.p=name;if(Array.isArray(r.kills))r.kills=r.kills.map(k=>k===oldName?name:k);if(typeof r.death==="string")r.death=r.death.split(oldName).join(name)});
-        Object.keys(SESSION_PARTICIPANTS).forEach(id=>{if(Array.isArray(SESSION_PARTICIPANTS[id]))SESSION_PARTICIPANTS[id]=SESSION_PARTICIPANTS[id].map(n=>n===oldName?name:n)});
-        if(currentPlayer===oldName)currentPlayer=name;
-      }
+      if(name!==oldName)crewtestRenamePlayerReferences(oldName,name);
       if(TEST_MODE){
         crewtestSaveState();
         refreshSessionSelectors();syncEntryPlayerOptions();refreshEventPlayerOptions();renderAll();renderAdmin();resetAdminPlayerForm();
