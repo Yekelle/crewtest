@@ -466,9 +466,27 @@ footer{position:relative;z-index:1;text-align:center;color:#6f889a;font-size:12p
 @media(max-width:700px){html{background-attachment:scroll;background-position:center top}}
 
 @media(max-width:1180px){
-  .player-deco-green{width:100px;top:-78px;right:180px}
-  .player-deco-blue{width:105px;left:-58px;right:auto;top:110px}
-  .player-deco-purple{width:235px;left:auto;right:4px}
+
+  .player-deco-green{
+    width:100px;
+    top:-78px;
+    right:150px;
+  }
+
+  .player-deco-blue{
+    width:105px;
+    left:auto;
+    right:-45px;
+    top:280px;
+  }
+
+  .player-deco-purple{
+    width:210px;
+    left:10px;
+    right:auto;
+    bottom:0;
+  }
+
 }
 @media(max-width:900px){
   .player-deco-green,.player-deco-blue,.player-deco-purple{display:none}
