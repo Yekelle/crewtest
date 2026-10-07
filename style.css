@@ -491,3 +491,61 @@ footer{position:relative;z-index:1;text-align:center;color:#6f889a;font-size:12p
 @media(max-width:900px){
   .player-deco-green,.player-deco-blue,.player-deco-purple{display:none}
 }
+
+
+/* ===== Décors onglet Sessions ===== */
+#view-sessions{position:relative;overflow:visible}
+.session-panel-top,.session-panel-detail{position:relative;overflow:visible!important}
+.session-deco,.session-deco-fixed{
+  pointer-events:none;
+  user-select:none;
+  -webkit-user-drag:none;
+  filter:drop-shadow(0 8px 12px rgba(0,0,0,.38));
+}
+.session-deco{position:absolute}
+.session-deco-red{
+  width:130px;
+  height:auto;
+  right:-62px;
+  top:38px;
+  transform:scaleX(-1);
+  z-index:9;
+}
+.session-deco-yellow{
+  width:150px;
+  height:auto;
+  left:-120px;
+  top:92px;
+  transform:rotate(-8deg);
+  z-index:8;
+}
+.session-deco-fixed{position:fixed}
+.session-deco-purple{
+  width:220px;
+  height:auto;
+  left:auto;
+  right:170px;
+  bottom:0;
+  z-index:18;
+}
+
+@media(max-width:1180px){
+  .session-deco-red{
+    width:100px;
+    right:-30px;
+    top:34px;
+  }
+  .session-deco-yellow{
+    width:112px;
+    left:-72px;
+    top:125px;
+  }
+  .session-deco-purple{
+    width:180px;
+    right:28px;
+    bottom:0;
+  }
+}
+@media(max-width:900px){
+  .session-deco-red,.session-deco-yellow,.session-deco-purple{display:none}
+}
