@@ -22,7 +22,7 @@ let RECORDS=[],GAMES=[],SESSION_PARTICIPANTS={},PLAYERS=[];
 let TEST_IMPORTS={};
 let pendingJsonImport=null;
 const CREWTEST_STORAGE_KEY="crewtest-json-lab-v1";
-let currentScope=latestMonth(),currentPlayer="Bunny_Island",currentPlayerMonth=latestMonth(),currentPlayerMode="month",editingRecordKey=null;
+let currentScope=latestMonth(),currentPlayer="Bunny_Island",currentPlayerMonth=latestMonth(),currentPlayerMode="month",currentPlayerDetailTab="overview",editingRecordKey=null;
 
 /* ===== Authentification et données Supabase ===== */
 
@@ -1288,6 +1288,10 @@ document.querySelectorAll(".nav").forEach(b=>b.addEventListener("click",()=>{doc
 document.getElementById("period-select").addEventListener("change",e=>{currentScope=e.target.value;renderStats()});
 document.getElementById("session-month").addEventListener("change",renderSessions);
 document.getElementById("player-month-select").addEventListener("change",e=>{currentPlayerMonth=e.target.value;currentPlayerMode="month";renderPlayerTabs();renderPlayer()});
+document.querySelectorAll("#player-detail-tabs [data-player-detail]").forEach(b=>b.addEventListener("click",()=>{
+  currentPlayerDetailTab=b.dataset.playerDetail;
+  syncPlayerDetailTabs();
+}));
 
 /* ===== Rendu des pages ===== */
 function renderStats(){
@@ -1384,35 +1388,176 @@ function renderSession(id){
 function mostCommon(arr){const c={};arr.forEach(v=>c[v]=(c[v]||0)+1);return Object.entries(c).sort((a,b)=>b[1]-a[1])[0]?.[0]}
 
 /* ===== Fiche joueur ===== */
-function renderPlayerList(){const box=document.getElementById("player-list");box.innerHTML=sortedPlayers().map(p=>{const has=RECORDS.some(r=>r.p===p.name);return `<button class="player-btn ${p.name===currentPlayer?"active":""}" data-p="${esc(p.name)}">${esc(p.name)}<span>@${esc(p.handle)}${has?" • données":" • aucune grille"}</span></button>`}).join("");box.querySelectorAll(".player-btn").forEach(b=>b.addEventListener("click",()=>{currentPlayer=b.dataset.p;currentPlayerMonth=latestMonth();currentPlayerMode="month";renderPlayerList();syncPlayerMonth();renderPlayerTabs();renderPlayer()}))}
+function renderPlayerList(){
+ const box=document.getElementById("player-list");
+ box.innerHTML=sortedPlayers().map(p=>{
+   const has=RECORDS.some(r=>r.p===p.name);
+   return `<button class="player-btn ${p.name===currentPlayer?"active":""}" data-p="${esc(p.name)}">${esc(p.name)}<span>@${esc(p.handle)}${has?" • données":" • aucune grille"}</span></button>`
+ }).join("");
+ box.querySelectorAll(".player-btn").forEach(b=>b.addEventListener("click",()=>{
+   currentPlayer=b.dataset.p;
+   currentPlayerMonth=latestMonth();
+   currentPlayerMode="month";
+   currentPlayerDetailTab="overview";
+   renderPlayerList();
+   syncPlayerMonth();
+   renderPlayerTabs();
+   renderPlayer();
+ }))
+}
 function syncPlayerMonth(){document.getElementById("player-month-select").value=currentPlayerMonth}
-function renderPlayerTabs(){const all=RECORDS.filter(r=>r.p===currentPlayer),ids=[...new Set(all.filter(r=>SESSIONS[r.session]?.month===currentPlayerMonth).map(r=>r.session))].sort((a,b)=>b.localeCompare(a)),box=document.getElementById("player-session-tabs");box.innerHTML=`<button class="tab ${currentPlayerMode==="month"?"active":""}" data-mode="month">Cumul du mois</button>`+ids.map(id=>`<button class="tab ${currentPlayerMode===id?"active":""}" data-mode="${id}">${esc(SESSIONS[id].label)}</button>`).join("")+`<button class="tab ${currentPlayerMode==="all"?"active":""}" data-mode="all">Cumul global</button>`;box.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>{currentPlayerMode=b.dataset.mode;renderPlayerTabs();renderPlayer()}))}
+function renderPlayerTabs(){
+ const all=RECORDS.filter(r=>r.p===currentPlayer),
+ ids=[...new Set(all.filter(r=>SESSIONS[r.session]?.month===currentPlayerMonth).map(r=>r.session))].sort((a,b)=>b.localeCompare(a)),
+ box=document.getElementById("player-session-tabs");
+ box.innerHTML=`<button class="tab ${currentPlayerMode==="month"?"active":""}" data-mode="month">Cumul du mois</button>`+
+ ids.map(id=>`<button class="tab ${currentPlayerMode===id?"active":""}" data-mode="${id}">${esc(SESSIONS[id].label)}</button>`).join("")+
+ `<button class="tab ${currentPlayerMode==="all"?"active":""}" data-mode="all">Cumul global</button>`;
+ box.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>{
+   currentPlayerMode=b.dataset.mode;
+   renderPlayerTabs();
+   renderPlayer()
+ }))
+}
+function syncPlayerDetailTabs(){
+ const valid=["overview","votes","impostor","games"];
+ if(!valid.includes(currentPlayerDetailTab))currentPlayerDetailTab="overview";
+ document.querySelectorAll("#player-detail-tabs [data-player-detail]").forEach(b=>{
+   const active=b.dataset.playerDetail===currentPlayerDetailTab;
+   b.classList.toggle("active",active);
+   b.setAttribute("aria-selected",active?"true":"false");
+ });
+ valid.forEach(name=>{
+   const panel=document.getElementById("player-detail-"+name);
+   if(panel)panel.hidden=name!==currentPlayerDetailTab;
+ });
+}
+function statCards(targetId,items){
+ const target=document.getElementById(targetId);
+ if(!target)return;
+ target.innerHTML=items.map(([a,b])=>`<div class="kv-item"><span>${esc(a)}</span><strong>${esc(String(b))}</strong></div>`).join("");
+}
+function clearPlayerDetails(message=""){
+ ["p-overview-performance","p-overview-reports","p-overview-activity","p-vote-stats","p-impostor-stats"].forEach(id=>{
+   const el=document.getElementById(id);if(el)el.innerHTML=message?`<div class="kv-item"><span>Info</span><strong>${esc(message)}</strong></div>`:"";
+ });
+ document.getElementById("p-maps").innerHTML="";
+ document.getElementById("p-sabotage").innerHTML="";
+ document.getElementById("p-games").innerHTML="";
+ syncPlayerDetailTabs();
+}
 function renderPlayer(){
  const p=sortedPlayers().find(x=>x.name===currentPlayer);
+ syncPlayerDetailTabs();
  if(!p){
   document.getElementById("p-name").textContent="Aucun streamer";
   const twitchLink=document.getElementById("p-handle");twitchLink.textContent="";twitchLink.removeAttribute("href");
   document.getElementById("p-state").textContent="Aucun streamer enregistré";
   document.getElementById("p-summary").innerHTML=`<div class="card"><span>Statut</span><strong>Aucune donnée</strong></div>`;
-  document.getElementById("p-stats").innerHTML="";document.getElementById("p-maps").innerHTML="";document.getElementById("p-sabotage").innerHTML="";document.getElementById("p-games").innerHTML="";
+  clearPlayerDetails();
   return;
  }
- const all=RECORDS.filter(r=>r.p===currentPlayer);let rr=currentPlayerMode==="all"?all:currentPlayerMode==="month"?all.filter(r=>SESSIONS[r.session]?.month===currentPlayerMonth):all.filter(r=>r.session===currentPlayerMode);
- document.getElementById("p-name").textContent=p.name;const twitchLink=document.getElementById("p-handle");twitchLink.textContent="@"+p.handle+" ↗";twitchLink.href="https://www.twitch.tv/"+encodeURIComponent(p.handle);twitchLink.setAttribute("aria-label","Ouvrir la chaîne Twitch de "+p.name);document.getElementById("p-state").textContent=all.length?"Données présentes":"Aucune grille détaillée";
- if(!all.length){document.getElementById("p-summary").innerHTML=`<div class="card"><span>Statut</span><strong>Pas de données</strong></div>`;document.getElementById("p-stats").innerHTML=`<div class="kv-item"><span>Info</span><strong>Aucune grille fournie dans cette démo.</strong></div>`;document.getElementById("p-maps").innerHTML="";document.getElementById("p-sabotage").innerHTML="";document.getElementById("p-games").innerHTML="";return}
- const wins=rr.filter(r=>resultFor(r)==="Victoire").length,imp=rr.filter(r=>r.role==="Imposteur"),crew=rr.filter(r=>r.role==="Crew"),kills=rr.reduce((a,r)=>a+(r.kills?.length||0),0),reports=rr.reduce((a,r)=>a+Number(r.reports||0),0),selfReports=rr.reduce((a,r)=>a+Number(r.self||0),0),totalReports=reports+selfReports,reportGames=rr.filter(r=>Number(r.reports||0)+Number(r.self||0)>0).length,repairs=rr.reduce((a,r)=>a+(Number.isFinite(r.repair)?r.repair:0),0),votes=rr.reduce((a,r)=>a+Number(r.voteCast||0),0),voteImp=rr.reduce((a,r)=>a+Number(r.voteImpostor||0),0),voteCrew=rr.reduce((a,r)=>a+Number(r.voteCrew||0),0),voteSkip=rr.reduce((a,r)=>a+Number(r.voteSkip||0),0),voteNoVote=rr.reduce((a,r)=>a+Number(r.voteNoVote||0),0),voteSelf=rr.reduce((a,r)=>a+Number(r.voteSelf||0),0),crewVoteTotal=rr.reduce((a,r)=>a+Number(r.crewVoteTotal||0),0),crewVoteCorrect=rr.reduce((a,r)=>a+Number(r.crewVoteCorrect||0),0),crewVoteWrong=rr.reduce((a,r)=>a+Number(r.crewVoteWrong||0),0),taskRows=crew.filter(r=>r.tasks!==null&&r.tasks!==undefined&&r.totalTasks!==null&&r.totalTasks!==undefined),taskDone=taskRows.reduce((a,r)=>a+Number(r.tasks||0),0),taskTotal=taskRows.reduce((a,r)=>a+Number(r.totalTasks||0),0),crewSurvived=crew.filter(r=>!r.ejected&&(!r.death||r.death==="Survit")).length,fav=favoriteSabotage(imp);
- document.getElementById("p-summary").innerHTML=[["Games",rr.length],["Victoires",wins],["Kills",kills],["Reports",totalReports],["Réparations",repairs]].map(([a,b])=>`<div class="card"><span>${a}</span><strong>${b}</strong></div>`).join("");
- document.getElementById("p-stats").innerHTML=[
-  ["Winrate global",pct(wins,rr.length)],["Winrate Crew",pct(crew.filter(r=>resultFor(r)==="Victoire").length,crew.length)],["Winrate Imposteur",pct(imp.filter(r=>resultFor(r)==="Victoire").length,imp.length)],["Part Crew",pct(crew.length,rr.length)],
-  ["Morts T1",crew.filter(r=>r.turn===1).length],["Éjections Crew",crew.filter(r=>r.ejected).length],["Éjections Imposteur",imp.filter(r=>r.ejected).length],["Sabotages",rr.reduce((a,r)=>a+(r.sab||0),0)],
-  ["Reports normaux",reports],["Self-reports",selfReports],["Reports totaux",totalReports],["Games avec report",pct(reportGames,rr.length)],["Taux de self-report",pct(selfReports,totalReports)],
-  ["Survie Crew",pct(crewSurvived,crew.length)],["Kills / game Imposteur",imp.length?(kills/imp.length).toFixed(2).replace(".",","):"—"],["Réparations / game",rr.length?(repairs/rr.length).toFixed(2).replace(".",","):"—"],
-  ["Quêtes moyennes (Crew)",taskRows.length?(taskDone/taskRows.length).toFixed(2).replace(".",","):"—"],["Taux de quêtes (Crew)",pct(taskDone,taskTotal)],
-  ["Votes enregistrés",votes],["Votes sur Imposteur",voteImp],["Votes sur Crew",voteCrew],["Skips",voteSkip],["Sans vote",voteNoVote],["Auto-votes",voteSelf],
-  ["Votes justes (Crew)",crewVoteCorrect],["Votes à côté (Crew)",crewVoteWrong],["Justesse du vote Crew",pct(crewVoteCorrect,crewVoteTotal)]
- ].map(([a,b])=>`<div class="kv-item"><span>${esc(a)}</span><strong>${esc(String(b))}</strong></div>`).join("");
- const maps={};imp.forEach(r=>{const g=gameFor(r);if(g)maps[g.map]=(maps[g.map]||0)+1});document.getElementById("p-maps").innerHTML=Object.keys(maps).length?Object.entries(maps).map(([m,n])=>`<div class="map-row"><span>${esc(m)}</span><strong>${n}</strong></div>`).join(""):`<div class="map-row"><span>Aucune game en Imposteur</span><strong>0</strong></div>`;document.getElementById("p-sabotage").innerHTML=`<span>Sabotage préféré en Imposteur</span><strong>${esc(fav?fav.name:(imp.some(r=>(r.sab||0)>0)?"Non renseigné":"Aucun"))}</strong>`;
- document.getElementById("p-games").innerHTML=rr.sort((a,b)=>a.g-b.g).map(r=>{const g=gameFor(r),killsText=r.role==="Imposteur"?(r.kills?.join(" → ")||"Aucun kill"):"—",sortie=r.ejected?"Éjecté":(r.role==="Crew"?(r.death||"Survit"):"Survit");return `<tr><td>${r.g}</td><td>${esc(g?.map||"—")}</td><td>${esc(r.role)}</td><td>${resultFor(r)}</td><td>${esc(g?.method||"—")}</td><td>${r.reports||0}</td><td>${r.self||0}</td><td>${r.sab||0}</td><td>${r.repair===null?"?":r.repair}</td><td>${esc(killsText)}</td><td>${esc(sortie)}</td><td>${r.role==="Crew"&&r.deathPos?`${r.deathPos}${r.deathPos===1?"er":"e"}`:"—"}</td><td>${r.turn?`T${r.turn}`:"—"}</td><td>${r.tasks===null?"—":`${r.tasks}/${r.totalTasks||9}`}</td><td>${esc(r.note||"")}</td></tr>`}).join("")
+ const all=RECORDS.filter(r=>r.p===currentPlayer);
+ let rr=currentPlayerMode==="all"?all:currentPlayerMode==="month"?all.filter(r=>SESSIONS[r.session]?.month===currentPlayerMonth):all.filter(r=>r.session===currentPlayerMode);
+ document.getElementById("p-name").textContent=p.name;
+ const twitchLink=document.getElementById("p-handle");
+ twitchLink.textContent="@"+p.handle+" ↗";
+ twitchLink.href="https://www.twitch.tv/"+encodeURIComponent(p.handle);
+ twitchLink.setAttribute("aria-label","Ouvrir la chaîne Twitch de "+p.name);
+ document.getElementById("p-state").textContent=all.length?"Données présentes":"Aucune grille détaillée";
+
+ if(!all.length){
+  document.getElementById("p-summary").innerHTML=`<div class="card"><span>Statut</span><strong>Pas de données</strong></div>`;
+  clearPlayerDetails("Aucune grille fournie dans cette démo.");
+  return;
+ }
+
+ const wins=rr.filter(r=>resultFor(r)==="Victoire").length,
+ imp=rr.filter(r=>r.role==="Imposteur"),
+ crew=rr.filter(r=>r.role==="Crew"),
+ kills=rr.reduce((a,r)=>a+(r.kills?.length||0),0),
+ reports=rr.reduce((a,r)=>a+Number(r.reports||0),0),
+ selfReports=rr.reduce((a,r)=>a+Number(r.self||0),0),
+ totalReports=reports+selfReports,
+ reportGames=rr.filter(r=>Number(r.reports||0)+Number(r.self||0)>0).length,
+ repairs=rr.reduce((a,r)=>a+(Number.isFinite(r.repair)?r.repair:0),0),
+ votes=rr.reduce((a,r)=>a+Number(r.voteCast||0),0),
+ voteImp=rr.reduce((a,r)=>a+Number(r.voteImpostor||0),0),
+ voteCrew=rr.reduce((a,r)=>a+Number(r.voteCrew||0),0),
+ voteSkip=rr.reduce((a,r)=>a+Number(r.voteSkip||0),0),
+ voteNoVote=rr.reduce((a,r)=>a+Number(r.voteNoVote||0),0),
+ voteSelf=rr.reduce((a,r)=>a+Number(r.voteSelf||0),0),
+ crewVoteTotal=rr.reduce((a,r)=>a+Number(r.crewVoteTotal||0),0),
+ crewVoteCorrect=rr.reduce((a,r)=>a+Number(r.crewVoteCorrect||0),0),
+ crewVoteWrong=rr.reduce((a,r)=>a+Number(r.crewVoteWrong||0),0),
+ taskRows=crew.filter(r=>r.tasks!==null&&r.tasks!==undefined&&r.totalTasks!==null&&r.totalTasks!==undefined),
+ taskDone=taskRows.reduce((a,r)=>a+Number(r.tasks||0),0),
+ taskTotal=taskRows.reduce((a,r)=>a+Number(r.totalTasks||0),0),
+ crewSurvived=crew.filter(r=>!r.ejected&&(!r.death||r.death==="Survit")).length,
+ sabCount=rr.reduce((a,r)=>a+Number(r.sab||0),0),
+ fav=favoriteSabotage(imp);
+
+ document.getElementById("p-summary").innerHTML=[
+  ["Games",rr.length],["Victoires",wins],["Kills",kills],["Reports",totalReports],["Réparations",repairs]
+ ].map(([a,b])=>`<div class="card"><span>${a}</span><strong>${b}</strong></div>`).join("");
+
+ statCards("p-overview-performance",[
+  ["Winrate global",pct(wins,rr.length)],
+  ["Winrate Crew",pct(crew.filter(r=>resultFor(r)==="Victoire").length,crew.length)],
+  ["Winrate Imposteur",pct(imp.filter(r=>resultFor(r)==="Victoire").length,imp.length)],
+  ["Part Crew",pct(crew.length,rr.length)],
+  ["Morts T1",crew.filter(r=>r.turn===1).length],
+  ["Éjections Crew",crew.filter(r=>r.ejected).length],
+  ["Survie Crew",pct(crewSurvived,crew.length)]
+ ]);
+ statCards("p-overview-reports",[
+  ["Reports normaux",reports],
+  ["Self-reports",selfReports],
+  ["Reports totaux",totalReports],
+  ["Games avec report",pct(reportGames,rr.length)],
+  ["Taux de self-report",pct(selfReports,totalReports)]
+ ]);
+ statCards("p-overview-activity",[
+  ["Réparations",repairs],
+  ["Réparations / game",rr.length?(repairs/rr.length).toFixed(2).replace(".",","):"—"],
+  ["Quêtes moyennes (Crew)",taskRows.length?(taskDone/taskRows.length).toFixed(2).replace(".",","):"—"],
+  ["Taux de quêtes (Crew)",pct(taskDone,taskTotal)]
+ ]);
+ statCards("p-vote-stats",[
+  ["Votes enregistrés",votes],
+  ["Votes sur Imposteur",voteImp],
+  ["Votes sur Crew",voteCrew],
+  ["Skips",voteSkip],
+  ["Sans vote",voteNoVote],
+  ["Auto-votes",voteSelf],
+  ["Votes justes (Crew)",crewVoteCorrect],
+  ["Votes à côté (Crew)",crewVoteWrong],
+  ["Justesse du vote Crew",pct(crewVoteCorrect,crewVoteTotal)]
+ ]);
+ statCards("p-impostor-stats",[
+  ["Games en Imposteur",imp.length],
+  ["Winrate Imposteur",pct(imp.filter(r=>resultFor(r)==="Victoire").length,imp.length)],
+  ["Kills",kills],
+  ["Kills / game Imposteur",imp.length?(kills/imp.length).toFixed(2).replace(".",","):"—"],
+  ["Éjections Imposteur",imp.filter(r=>r.ejected).length],
+  ["Sabotages",sabCount],
+  ["Sabotages / game Imposteur",imp.length?(sabCount/imp.length).toFixed(2).replace(".",","):"—"]
+ ]);
+
+ const maps={};
+ imp.forEach(r=>{const g=gameFor(r);if(g)maps[g.map]=(maps[g.map]||0)+1});
+ document.getElementById("p-maps").innerHTML=Object.keys(maps).length
+  ?Object.entries(maps).map(([m,n])=>`<div class="map-row"><span>${esc(m)}</span><strong>${n}</strong></div>`).join("")
+  :`<div class="map-row"><span>Aucune game en Imposteur</span><strong>0</strong></div>`;
+ document.getElementById("p-sabotage").innerHTML=`<span>Sabotage préféré en Imposteur</span><strong>${esc(fav?fav.name:(imp.some(r=>(r.sab||0)>0)?"Non renseigné":"Aucun"))}</strong>`;
+
+ document.getElementById("p-games").innerHTML=[...rr].sort((a,b)=>a.g-b.g).map(r=>{
+  const g=gameFor(r),
+  killsText=r.role==="Imposteur"?(r.kills?.join(" → ")||"Aucun kill"):"—",
+  sortie=r.ejected?"Éjecté":(r.role==="Crew"?(r.death||"Survit"):"Survit");
+  return `<tr><td>${r.g}</td><td>${esc(g?.map||"—")}</td><td>${esc(r.role)}</td><td>${resultFor(r)}</td><td>${esc(g?.method||"—")}</td><td>${r.reports||0}</td><td>${r.self||0}</td><td>${r.sab||0}</td><td>${r.repair===null?"?":r.repair}</td><td>${esc(killsText)}</td><td>${esc(sortie)}</td><td>${r.role==="Crew"&&r.deathPos?`${r.deathPos}${r.deathPos===1?"er":"e"}`:"—"}</td><td>${r.turn?`T${r.turn}`:"—"}</td><td>${r.tasks===null?"—":`${r.tasks}/${r.totalTasks||9}`}</td><td>${esc(r.note||"")}</td></tr>`
+ }).join("");
+ syncPlayerDetailTabs();
 }
 
 /* ===== Saisie d'une game ===== */
