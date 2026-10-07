@@ -22,7 +22,7 @@ let RECORDS=[],GAMES=[],SESSION_PARTICIPANTS={},PLAYERS=[];
 let TEST_IMPORTS={};
 let pendingJsonImport=null;
 const CREWTEST_STORAGE_KEY="crewtest-json-lab-v1";
-let currentScope=latestMonth(),currentPlayer="Bunny_Island",currentPlayerMonth=latestMonth(),currentPlayerMode="month",currentPlayerDetailTab="overview",editingRecordKey=null;
+let currentScope=latestMonth(),currentSessionDetailTab="overview",currentSessionId=null,currentPlayer="Bunny_Island",currentPlayerMonth=latestMonth(),currentPlayerMode="month",currentPlayerDetailTab="overview",editingRecordKey=null;
 
 /* ===== Authentification et données Supabase ===== */
 
@@ -1286,8 +1286,16 @@ function crewtestInitImporter(){
 /* navigation */
 document.querySelectorAll(".nav").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll(".nav").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));document.getElementById("view-"+b.dataset.view).classList.add("active");if(b.dataset.view==="admin"){renderAdminAccess();if(adminCanWrite())renderAdmin()}}));
 document.getElementById("period-select").addEventListener("change",e=>{currentScope=e.target.value;renderStats()});
-document.getElementById("session-month").addEventListener("change",renderSessions);
+document.getElementById("session-month").addEventListener("change",()=>{
+  currentSessionId=null;
+  currentSessionDetailTab="overview";
+  renderSessions();
+});
 document.getElementById("player-month-select").addEventListener("change",e=>{currentPlayerMonth=e.target.value;currentPlayerMode="month";renderPlayerTabs();renderPlayer()});
+document.querySelectorAll("#session-detail-tabs [data-session-detail]").forEach(b=>b.addEventListener("click",()=>{
+  currentSessionDetailTab=b.dataset.sessionDetail;
+  syncSessionDetailTabs();
+}));
 document.querySelectorAll("#player-detail-tabs [data-player-detail]").forEach(b=>b.addEventListener("click",()=>{
   currentPlayerDetailTab=b.dataset.playerDetail;
   syncPlayerDetailTabs();
@@ -1361,29 +1369,170 @@ function renderStats(){
 }
 
 function renderSessions(){
- const month=document.getElementById("session-month").value,cards=document.getElementById("session-cards"),entries=Object.entries(SESSIONS).filter(([,s])=>s.month===month).sort((a,b)=>b[0].localeCompare(a[0]));
- cards.innerHTML=entries.map(([id,s],i)=>`<button class="session-card ${i===0?"active":""}" data-id="${id}"><h3>${esc(s.date)}</h3><p>${GAMES.filter(g=>g.session===id).length} games enregistrées</p></button>`).join("");
- cards.querySelectorAll(".session-card").forEach(b=>b.addEventListener("click",()=>{cards.querySelectorAll(".session-card").forEach(x=>x.classList.remove("active"));b.classList.add("active");renderSession(b.dataset.id)}));if(entries.length)renderSession(entries[0][0]);
+ const month=document.getElementById("session-month").value,
+ cards=document.getElementById("session-cards"),
+ entries=Object.entries(SESSIONS).filter(([,s])=>s.month===month).sort((a,b)=>b[0].localeCompare(a[0]));
+
+ if(!entries.length){
+  currentSessionId=null;
+  cards.innerHTML='<p class="muted">Aucune session pour ce mois.</p>';
+  document.getElementById("session-title").textContent="Aucune session";
+  document.getElementById("session-summary").innerHTML="";
+  ["session-overview-results","session-overview-participation","session-action-stats","session-vote-stats","session-players","session-games"].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.innerHTML="";
+  });
+  syncSessionDetailTabs();
+  return;
+ }
+
+ if(!entries.some(([id])=>id===currentSessionId))currentSessionId=entries[0][0];
+ cards.innerHTML=entries.map(([id,s])=>`<button class="session-card ${id===currentSessionId?"active":""}" data-id="${id}"><h3>${esc(s.date)}</h3><p>${GAMES.filter(g=>g.session===id).length} games enregistrées</p></button>`).join("");
+ cards.querySelectorAll(".session-card").forEach(b=>b.addEventListener("click",()=>{
+   currentSessionId=b.dataset.id;
+   cards.querySelectorAll(".session-card").forEach(x=>x.classList.toggle("active",x===b));
+   renderSession(currentSessionId)
+ }));
+ renderSession(currentSessionId);
+}
+function syncSessionDetailTabs(){
+ const valid=["overview","actions","votes","players","games"];
+ if(!valid.includes(currentSessionDetailTab))currentSessionDetailTab="overview";
+ document.querySelectorAll("#session-detail-tabs [data-session-detail]").forEach(b=>{
+   const active=b.dataset.sessionDetail===currentSessionDetailTab;
+   b.classList.toggle("active",active);
+   b.setAttribute("aria-selected",active?"true":"false");
+ });
+ valid.forEach(name=>{
+   const panel=document.getElementById("session-detail-"+name);
+   if(panel)panel.hidden=name!==currentSessionDetailTab;
+ });
 }
 function renderSession(id){
- const s=SESSIONS[id],games=GAMES.filter(g=>g.session===id).sort((a,b)=>a.n-b.n),recs=RECORDS.filter(r=>r.session===id),iw=games.filter(g=>g.winner==="Imposteurs").length,cw=games.length-iw;
- const votes=recs.reduce((a,r)=>a+Number(r.voteCast||0),0),voteImp=recs.reduce((a,r)=>a+Number(r.voteImpostor||0),0),voteCrew=recs.reduce((a,r)=>a+Number(r.voteCrew||0),0),skips=recs.reduce((a,r)=>a+Number(r.voteSkip||0),0),noVotes=recs.reduce((a,r)=>a+Number(r.voteNoVote||0),0),crewVoteTotal=recs.reduce((a,r)=>a+Number(r.crewVoteTotal||0),0),crewVoteCorrect=recs.reduce((a,r)=>a+Number(r.crewVoteCorrect||0),0),
- normalReports=recs.reduce((a,r)=>a+Number(r.reports||0),0),selfReports=recs.reduce((a,r)=>a+Number(r.self||0),0),totalReports=normalReports+selfReports,
- recordsWithReport=recs.filter(r=>Number(r.reports||0)+Number(r.self||0)>0).length,
- taskRows=recs.filter(r=>r.role==="Crew"&&r.tasks!==null&&r.tasks!==undefined&&r.totalTasks!==null&&r.totalTasks!==undefined),
- taskDone=taskRows.reduce((a,r)=>a+Number(r.tasks||0),0),taskTotal=taskRows.reduce((a,r)=>a+Number(r.totalTasks||0),0);
+ const s=SESSIONS[id];
+ if(!s)return;
+ const games=GAMES.filter(g=>g.session===id).sort((a,b)=>a.n-b.n),
+ recs=RECORDS.filter(r=>r.session===id),
+ iw=games.filter(g=>g.winner==="Imposteurs").length,
+ cw=games.filter(g=>g.winner==="Crewmates").length,
+ uniquePlayers=[...new Set(recs.map(r=>r.p))],
+ configuredParticipants=participantNamesForSession(id),
+ participantCount=configuredParticipants.length||uniquePlayers.length,
+ impRecords=recs.filter(r=>r.role==="Imposteur"),
+ crewRecords=recs.filter(r=>r.role==="Crew"),
+ wins=recs.filter(r=>resultFor(r)==="Victoire").length,
+ kills=recs.reduce((a,r)=>a+(r.kills?.length||0),0),
+ sabotages=recs.reduce((a,r)=>a+Number(r.sab||0),0),
+ repairs=recs.reduce((a,r)=>a+(Number.isFinite(r.repair)?Number(r.repair):0),0),
+ repairers=new Set(recs.filter(r=>Number(r.repair||0)>0).map(r=>r.p)).size,
+ normalReports=recs.reduce((a,r)=>a+Number(r.reports||0),0),
+ selfReports=recs.reduce((a,r)=>a+Number(r.self||0),0),
+ totalReports=normalReports+selfReports,
+ reportPlayers=new Set(recs.filter(r=>Number(r.reports||0)+Number(r.self||0)>0).map(r=>r.p)).size,
+ votes=recs.reduce((a,r)=>a+Number(r.voteCast||0),0),
+ voteImp=recs.reduce((a,r)=>a+Number(r.voteImpostor||0),0),
+ voteCrew=recs.reduce((a,r)=>a+Number(r.voteCrew||0),0),
+ skips=recs.reduce((a,r)=>a+Number(r.voteSkip||0),0),
+ noVotes=recs.reduce((a,r)=>a+Number(r.voteNoVote||0),0),
+ selfVotes=recs.reduce((a,r)=>a+Number(r.voteSelf||0),0),
+ crewVoteTotal=recs.reduce((a,r)=>a+Number(r.crewVoteTotal||0),0),
+ crewVoteCorrect=recs.reduce((a,r)=>a+Number(r.crewVoteCorrect||0),0),
+ crewVoteWrong=recs.reduce((a,r)=>a+Number(r.crewVoteWrong||0),0),
+ taskRows=crewRecords.filter(r=>r.tasks!==null&&r.tasks!==undefined&&r.totalTasks!==null&&r.totalTasks!==undefined),
+ taskDone=taskRows.reduce((a,r)=>a+Number(r.tasks||0),0),
+ taskTotal=taskRows.reduce((a,r)=>a+Number(r.totalTasks||0),0),
+ crewSurvived=crewRecords.filter(r=>!r.ejected&&(!r.death||r.death==="Survit")).length,
+ crewEjected=crewRecords.filter(r=>r.ejected).length,
+ impEjected=impRecords.filter(r=>r.ejected).length,
+ deathsT1=games.reduce((a,g)=>a+Number(g.t1Deaths||0),0);
+
  document.getElementById("session-title").textContent=s.date;
  document.getElementById("session-summary").innerHTML=[
-  ["Games",games.length],["Wins Imposteurs",iw],["Wins Crew",cw],
-  ["Morts T1 / game",games.length?(games.reduce((a,g)=>a+(g.t1Deaths||0),0)/games.length).toFixed(2).replace(".",","):"0"],
-  ["Map la + jouée",mostCommon(games.map(g=>g.map))||"—"],
-  ["Reports normaux",normalReports],["Self-reports",selfReports],["Reports totaux",totalReports],
-  ["Fiches avec report",pct(recordsWithReport,recs.length)],["Taux de self-report",pct(selfReports,totalReports)],
-  ["Quêtes moyennes Crew",taskRows.length?(taskDone/taskRows.length).toFixed(2).replace(".",","):"—"],["Taux de quêtes Crew",pct(taskDone,taskTotal)],
-  ["Votes enregistrés",votes],["Votes sur Imposteur",voteImp],["Votes sur Crew",voteCrew],
-  ["Skips / sans vote",skips+" / "+noVotes],["Justesse du Crew",pct(crewVoteCorrect,crewVoteTotal)]
+  ["Games",games.length],
+  ["Wins Crew",cw],
+  ["Wins Imposteurs",iw],
+  ["Participants",participantCount],
+  ["Map la + jouée",mostCommon(games.map(g=>g.map))||"—"]
  ].map(([a,b])=>`<div class="card"><span>${esc(a)}</span><strong>${esc(String(b))}</strong></div>`).join("");
- document.getElementById("session-games").innerHTML=games.map(g=>`<tr><td>${g.n}</td><td>${esc(g.map)}</td><td>${esc(g.winner)}</td><td>${esc(g.method)}</td><td>${g.t1Deaths||0}</td></tr>`).join("")
+
+ statCards("session-overview-results",[
+  ["Winrate Crew",pct(cw,games.length)],
+  ["Winrate Imposteurs",pct(iw,games.length)],
+  ["Victoires joueur",pct(wins,recs.length)],
+  ["Morts T1 / game",games.length?(deathsT1/games.length).toFixed(2).replace(".",","):"0"],
+  ["Map la + jouée",mostCommon(games.map(g=>g.map))||"—"]
+ ]);
+ statCards("session-overview-participation",[
+  ["Participants",participantCount],
+  ["Participants avec données",uniquePlayers.length],
+  ["Games / joueur",uniquePlayers.length?(recs.length/uniquePlayers.length).toFixed(2).replace(".",","):"—"],
+  ["Survie Crew",pct(crewSurvived,crewRecords.length)],
+  ["Éjections Crew",crewEjected],
+  ["Éjections Imposteur",impEjected]
+ ]);
+ statCards("session-action-stats",[
+  ["Kills",kills],
+  ["Kills / game Imposteur",impRecords.length?(kills/impRecords.length).toFixed(2).replace(".",","):"—"],
+  ["Sabotages",sabotages],
+  ["Sabotages / game Imposteur",impRecords.length?(sabotages/impRecords.length).toFixed(2).replace(".",","):"—"],
+  ["Réparations",repairs],
+  ["Réparations / game",games.length?(repairs/games.length).toFixed(2).replace(".",","):"—"],
+  ["Réparateurs différents",repairers],
+  ["Reports normaux",normalReports],
+  ["Self-reports",selfReports],
+  ["Reports totaux",totalReports],
+  ["Joueurs ayant reporté",reportPlayers],
+  ["Reports / joueur",uniquePlayers.length?(totalReports/uniquePlayers.length).toFixed(2).replace(".",","):"—"],
+  ["Taux de self-report",pct(selfReports,totalReports)],
+  ["Quêtes moyennes Crew",taskRows.length?(taskDone/taskRows.length).toFixed(2).replace(".",","):"—"],
+  ["Taux de quêtes Crew",pct(taskDone,taskTotal)]
+ ]);
+ statCards("session-vote-stats",[
+  ["Votes enregistrés",votes],
+  ["Votes sur Imposteur",voteImp],
+  ["Votes sur Crew",voteCrew],
+  ["Skips",skips],
+  ["Sans vote",noVotes],
+  ["Auto-votes",selfVotes],
+  ["Votes justes (Crew)",crewVoteCorrect],
+  ["Votes à côté (Crew)",crewVoteWrong],
+  ["Justesse du Crew",pct(crewVoteCorrect,crewVoteTotal)]
+ ]);
+
+ document.getElementById("session-players").innerHTML=uniquePlayers
+  .sort((a,b)=>a.localeCompare(b,"fr",{sensitivity:"base"}))
+  .map(name=>{
+    const rr=recs.filter(r=>r.p===name),
+    crew=rr.filter(r=>r.role==="Crew"),
+    imp=rr.filter(r=>r.role==="Imposteur"),
+    pwins=rr.filter(r=>resultFor(r)==="Victoire").length,
+    pkills=rr.reduce((a,r)=>a+(r.kills?.length||0),0),
+    preports=rr.reduce((a,r)=>a+Number(r.reports||0),0),
+    pself=rr.reduce((a,r)=>a+Number(r.self||0),0),
+    prepairs=rr.reduce((a,r)=>a+Number(r.repair||0),0),
+    psurvive=crew.filter(r=>!r.ejected&&(!r.death||r.death==="Survit")).length,
+    pVoteTotal=rr.reduce((a,r)=>a+Number(r.crewVoteTotal||0),0),
+    pVoteCorrect=rr.reduce((a,r)=>a+Number(r.crewVoteCorrect||0),0),
+    pTasks=crew.filter(r=>r.tasks!==null&&r.tasks!==undefined&&r.totalTasks!==null&&r.totalTasks!==undefined),
+    pTaskDone=pTasks.reduce((a,r)=>a+Number(r.tasks||0),0),
+    pTaskTotal=pTasks.reduce((a,r)=>a+Number(r.totalTasks||0),0),
+    taskText=pTasks.length?((pTaskDone/pTasks.length).toFixed(2).replace(".",",")+" • "+pct(pTaskDone,pTaskTotal)):"—";
+    return `<tr>
+      <td><strong>${esc(name)}</strong></td>
+      <td>${rr.length}</td>
+      <td>${pwins}/${rr.length} (${pct(pwins,rr.length)})</td>
+      <td>${imp.length}</td>
+      <td>${pkills}</td>
+      <td>${preports}</td>
+      <td>${pself}</td>
+      <td>${prepairs}</td>
+      <td>${pct(psurvive,crew.length)}</td>
+      <td>${pct(pVoteCorrect,pVoteTotal)}</td>
+      <td>${taskText}</td>
+    </tr>`
+  }).join("");
+
+ document.getElementById("session-games").innerHTML=games.map(g=>`<tr><td>${g.n}</td><td>${esc(g.map)}</td><td>${esc(g.winner)}</td><td>${esc(g.method)}</td><td>${g.t1Deaths||0}</td></tr>`).join("");
+ syncSessionDetailTabs();
 }
 function mostCommon(arr){const c={};arr.forEach(v=>c[v]=(c[v]||0)+1);return Object.entries(c).sort((a,b)=>b[1]-a[1])[0]?.[0]}
 
