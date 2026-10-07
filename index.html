@@ -188,7 +188,10 @@
         <img class="player-deco player-deco-green" src="assets/player-green-sit-v4.webp" alt="" aria-hidden="true">
         <img class="player-deco player-deco-blue" src="assets/player-blue-peek-v3.webp" alt="" aria-hidden="true">
         <div class="player-top">
-          <div><div class="eyebrow">FICHE JOUEUR</div><h2 id="p-name">Bunny_Island</h2><a id="p-handle" class="player-twitch-link" href="https://www.twitch.tv/_bunny_island_" target="_blank" rel="noopener noreferrer">@_bunny_island_ ↗</a></div>
+          <div class="player-identity">
+            <div id="p-avatar" class="player-avatar" aria-hidden="true"><span id="p-avatar-fallback">BI</span><img id="p-avatar-img" alt="" hidden></div>
+            <div><div class="eyebrow">FICHE JOUEUR</div><h2 id="p-name">Bunny_Island</h2><a id="p-handle" class="player-twitch-link" href="https://www.twitch.tv/_bunny_island_" target="_blank" rel="noopener noreferrer">@_bunny_island_ ↗</a></div>
+          </div>
           <span id="p-state" class="pill">Données présentes</span>
         </div>
         <div class="player-period-bar">
@@ -252,7 +255,7 @@
       </div>
       <div class="gap-top"></div>
       <div class="section-head">
-        <div><div class="section-title"><span class="section-icon">✎</span><h2>Saisie d’une game</h2></div><p>Chaque fiche peut contenir plusieurs événements et plusieurs sabotages. Enregistrer met à jour les données partagées dans Supabase.</p></div>
+        <div><div class="section-title"><span class="section-icon">✎</span><h2>Saisie d’une game</h2></div><p>Chaque fiche peut contenir plusieurs événements et plusieurs sabotages. Enregistrer met à jour les données de cette version de travail.</p></div>
         <button id="new-game-btn" class="primary">+ Nouvelle game</button>
       </div>
       <div class="form-grid cols4">
@@ -351,7 +354,7 @@
         <div class="subpanel-head">
           <div>
             <h3>Gérer les streamers</h3>
-            <p>Ajoute les membres du Crew qui pourront ensuite être sélectionnés dans la saisie et apparaître dans la page Joueurs.</p>
+            <p>Ajoute les membres du Crew, leurs alias en jeu et leur PP. En mode test, ces données restent uniquement dans le stockage local de CREWTEST.</p>
           </div>
         </div>
         <div class="admin-player-form">
@@ -361,8 +364,16 @@
           <label>Pseudo Twitch
             <input id="admin-player-handle" type="text" placeholder="nouveau_streamer" maxlength="40">
           </label>
-          <button id="admin-add-player-btn" class="primary" type="button">+ Ajouter le streamer</button>
-          <button id="admin-cancel-player-edit" class="secondary" type="button" hidden>Annuler</button>
+          <label>Alias en jeu
+            <input id="admin-player-aliases" type="text" placeholder="Alias1, Alias2, Alias3" maxlength="300">
+          </label>
+          <label>URL de la PP
+            <input id="admin-player-avatar" type="url" placeholder="https://..." maxlength="500">
+          </label>
+          <div class="admin-player-form-actions">
+            <button id="admin-add-player-btn" class="primary" type="button">+ Ajouter le streamer</button>
+            <button id="admin-cancel-player-edit" class="secondary" type="button" hidden>Annuler</button>
+          </div>
         </div>
         <span id="admin-player-status" class="muted"></span>
         <div id="admin-players-list" class="admin-players-list"></div>

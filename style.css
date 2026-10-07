@@ -254,11 +254,15 @@ footer{position:relative;z-index:1;text-align:center;color:#6f889a;font-size:12p
 
 /* ===== Admin : gestion des streamers ===== */
 .admin-players-panel{margin-bottom:18px}
-.admin-player-form{display:grid;grid-template-columns:minmax(180px,1fr) minmax(180px,1fr) auto;gap:12px;align-items:end;margin:14px 0 10px}
+.admin-player-form{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:12px;align-items:end;margin:14px 0 10px}
 .admin-player-form label{display:block}
 .admin-player-form input{width:100%}
+.admin-player-form-actions{grid-column:1/-1;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .admin-players-list{display:grid;gap:10px;margin-top:14px}
 .admin-player-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;padding:12px;border:1px solid #173f59;border-radius:11px;background:#071521}
+.admin-player-main{display:flex;align-items:center;gap:12px;min-width:0}
+.admin-player-preview{position:relative;display:grid;place-items:center;flex:0 0 42px;width:42px;height:42px;border-radius:50%;overflow:hidden;background:#0a3046;border:1px solid #2d6885;color:#dff8ff;font-size:12px;font-weight:900}
+.admin-player-preview img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .admin-player-row small{display:block;color:var(--muted);margin-top:4px;line-height:1.35}
 .admin-player-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .admin-player-row.inactive{opacity:.72}
@@ -267,6 +271,7 @@ footer{position:relative;z-index:1;text-align:center;color:#6f889a;font-size:12p
 .participant-check.inactive{opacity:.55}
 @media(max-width:800px){
   .admin-player-form{grid-template-columns:1fr;align-items:stretch}
+  .admin-player-form-actions{grid-column:auto}
   .admin-player-row{grid-template-columns:1fr}
   .admin-player-actions{justify-content:flex-start}
 }
@@ -285,7 +290,15 @@ footer{position:relative;z-index:1;text-align:center;color:#6f889a;font-size:12p
 }
 
 
-/* ===== Fiche joueur : lien Twitch ===== */
+/* ===== Fiche joueur : identité / avatar / lien Twitch ===== */
+.player-identity{display:flex;align-items:center;gap:14px;min-width:0}
+.player-avatar{position:relative;display:grid;place-items:center;flex:0 0 72px;width:72px;height:72px;border-radius:50%;overflow:hidden;background:linear-gradient(145deg,#0b3047,#071a29);border:2px solid #2d7598;box-shadow:0 0 22px rgba(34,220,255,.12);color:#dff8ff;font-size:20px;font-weight:900}
+.player-avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.player-list-avatar{position:relative;display:grid;place-items:center;width:36px;height:36px;border-radius:50%;overflow:hidden;background:#0a3046;border:1px solid #285f7d;color:#dff8ff;font-size:10px;font-weight:900}
+.player-list-avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.player-btn{display:grid;grid-template-columns:36px minmax(0,1fr);align-items:center;gap:10px}
+.player-btn-copy{min-width:0}
+.player-btn-copy strong{display:block;overflow-wrap:anywhere}
 .player-twitch-link{
   display:inline-flex;
   align-items:center;

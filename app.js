@@ -394,6 +394,62 @@ function refreshSessionSelectors(){
  formSession.innerHTML=ids.map(id=>`<option value="${esc(id)}">${esc(SESSIONS[id]?.label||id)}</option>`).join("");formSession.value=ids.includes(oldForm)?oldForm:(ids[0]||"");
 }
 function sortedPlayers(){return [...PLAYERS].sort((a,b)=>a.name.localeCompare(b.name,"fr",{sensitivity:"base"}))}
+function crewtestNormalizeIdentity(value){
+  return String(value??"").trim().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"");
+}
+function crewtestParseAliases(value){
+  const source=Array.isArray(value)?value:String(value||"").split(/[,;\n]+/);
+  const seen=new Set();
+  return source.map(v=>String(v||"").trim()).filter(Boolean).filter(alias=>{
+    const key=crewtestNormalizeIdentity(alias);
+    if(!key||seen.has(key))return false;
+    seen.add(key);
+    return true;
+  });
+}
+function crewtestIdentityValues(player){
+  if(!player)return [];
+  return [player.name,player.handle,...crewtestParseAliases(player.aliases)].filter(Boolean);
+}
+function crewtestFindPlayerByIdentity(value,excludeName=""){
+  const key=crewtestNormalizeIdentity(value);
+  if(!key)return null;
+  const matches=PLAYERS.filter(p=>p.name!==excludeName&&crewtestIdentityValues(p).some(v=>crewtestNormalizeIdentity(v)===key));
+  return matches.length===1?matches[0]:null;
+}
+function crewtestResolvePlayerName(value){
+  const clean=String(value||"").trim();
+  const match=crewtestFindPlayerByIdentity(clean);
+  return match?match.name:clean;
+}
+function crewtestUniqueAliases(name,handle,value){
+  const own=new Set([name,handle].map(crewtestNormalizeIdentity).filter(Boolean));
+  const seen=new Set();
+  return crewtestParseAliases(value).filter(alias=>{
+    const key=crewtestNormalizeIdentity(alias);
+    if(!key||own.has(key)||seen.has(key))return false;
+    seen.add(key);
+    return true;
+  });
+}
+function crewtestIdentityConflict(name,handle,aliases,oldName=""){
+  const keys=new Set([name,handle,...aliases].map(crewtestNormalizeIdentity).filter(Boolean));
+  return PLAYERS.find(p=>p.name!==oldName&&crewtestIdentityValues(p).some(v=>keys.has(crewtestNormalizeIdentity(v))))||null;
+}
+function crewtestCleanAvatarUrl(value){
+  const raw=String(value||"").trim();
+  if(!raw)return "";
+  try{
+    const url=new URL(raw);
+    return url.protocol==="http:"||url.protocol==="https:"?url.href:"";
+  }catch(_error){return ""}
+}
+function crewtestPlayerInitials(name){
+  const parts=String(name||"?").replace(/[_-]+/g," ").trim().split(/\s+/).filter(Boolean);
+  if(!parts.length)return "?";
+  if(parts.length>1)return (parts[0][0]+parts[1][0]).toUpperCase();
+  return parts[0].slice(0,2).toUpperCase();
+}
 function activePlayers(){return sortedPlayers().filter(p=>p.active!==false)}
 function playerIsUsed(name){return RECORDS.some(r=>r.p===name||r.kills?.includes(name))||Object.values(SESSION_PARTICIPANTS).some(names=>Array.isArray(names)&&names.includes(name))}
 function participantNamesForSession(session){const saved=SESSION_PARTICIPANTS[session];return Array.isArray(saved)?saved:[]}
@@ -451,10 +507,13 @@ function crewtestBaseName(raw,data){
   const value=String(raw||"").trim();
   const players=Array.isArray(data&&data.Players)?data.Players:[];
   const exact=players.find(function(p){return value===String(p.Name||"")});
-  if(exact)return exact.Name;
-  const withColor=players.find(function(p){return value.startsWith(String(p.Name||"")+" (")});
-  if(withColor)return withColor.Name;
-  return value.replace(/\s+\([^)]*\)\s*$/,"");
+  let base=value;
+  if(exact)base=exact.Name;
+  else{
+    const withColor=players.find(function(p){return value.startsWith(String(p.Name||"")+" (")});
+    base=withColor?withColor.Name:value.replace(/\s+\([^)]*\)\s*$/,"");
+  }
+  return crewtestResolvePlayerName(base);
 }
 function crewtestRole(role){
   return /impost/i.test(String(role||""))?"Imposteur":"Crew";
@@ -491,7 +550,7 @@ function crewtestSessionId(data){
 }
 function crewtestPlayerKey(data){
   return (Array.isArray(data&&data.Players)?data.Players:[])
-    .map(function(p){return String(p.Name||"").trim().toLowerCase()})
+    .map(function(p){return crewtestNormalizeIdentity(crewtestResolvePlayerName(p.Name))})
     .filter(Boolean).sort().join("|");
 }
 function crewtestFingerprint(data){
@@ -502,7 +561,7 @@ function crewtestCoreSignature(data){
   const events=Array.isArray(data&&data.Events)?data.Events:[];
   const meetings=Array.isArray(data&&data.Meetings)?data.Meetings:[];
   const players=(Array.isArray(data&&data.Players)?data.Players:[]).map(function(p){
-    return String(p.Name||"").trim().toLowerCase()+":"+crewtestRole(p.Role);
+    return crewtestNormalizeIdentity(crewtestResolvePlayerName(p.Name))+":"+crewtestRole(p.Role);
   }).sort();
   const kills=events.filter(function(e){return e.Type==="kill"}).map(function(e){
     return crewtestBaseName(e.Player,data).toLowerCase()+">"+crewtestBaseName(e.Target,data).toLowerCase();
@@ -592,10 +651,12 @@ function crewtestMergeRaw(existingRaw,incomingRaw){
   const playerMap=new Map();
   [existingRaw,incomingRaw].forEach(function(src){
     (Array.isArray(src&&src.Players)?src.Players:[]).forEach(function(p){
-      const key=String(p.Name||"").trim().toLowerCase();
+      const canonical=crewtestResolvePlayerName(p.Name);
+      const key=crewtestNormalizeIdentity(canonical);
       if(!key)return;
       const old=playerMap.get(key)||{};
       playerMap.set(key,Object.assign({},old,p,{
+        Name:canonical,
         Dead:old.Dead===true||p.Dead===true,
         Disconnected:old.Disconnected===true||p.Disconnected===true,
         TasksCompleted:Math.max(Number(old.TasksCompleted||0),Number(p.TasksCompleted||0)),
@@ -692,7 +753,7 @@ function crewtestVoteStats(data){
   const players=Array.isArray(data&&data.Players)?data.Players:[];
   const meetings=Array.isArray(data&&data.Meetings)?data.Meetings:[];
   const roleByName=new Map(players.map(function(p){
-    return [String(p.Name||"").trim(),crewtestRole(p.Role)];
+    return [crewtestResolvePlayerName(p.Name),crewtestRole(p.Role)];
   }));
   const stats=new Map();
 
@@ -750,11 +811,11 @@ function crewtestDeriveGame(data){
   const exiled=new Set();
   meetings.forEach(function(m){
     const value=String(m.ExileResult||"").toLowerCase();
-    rawPlayers.forEach(function(p){const name=String(p.Name||"");if(name&&value.startsWith(name.toLowerCase()+" "))exiled.add(name)});
+    rawPlayers.forEach(function(p){const rawName=String(p.Name||"");if(rawName&&value.startsWith(rawName.toLowerCase()+" "))exiled.add(nameOf(rawName))});
   });
   events.filter(function(e){return e.Type==="exile_result"}).forEach(function(e){
     const value=String(e.Detail||"").toLowerCase();
-    rawPlayers.forEach(function(p){const name=String(p.Name||"");if(name&&value.startsWith(name.toLowerCase()+" "))exiled.add(name)});
+    rawPlayers.forEach(function(p){const rawName=String(p.Name||"");if(rawName&&value.startsWith(rawName.toLowerCase()+" "))exiled.add(nameOf(rawName))});
   });
   const reportCounts=new Map(),selfCounts=new Map();
   meetings.forEach(function(m){
@@ -780,12 +841,12 @@ function crewtestDeriveGame(data){
     }
     if(!actor){
       const impostors=rawPlayers.filter(function(p){return crewtestRole(p.Role)==="Imposteur"});
-      if(impostors.length===1)actor=impostors[0].Name;
+      if(impostors.length===1)actor=nameOf(impostors[0].Name);
     }
     if(actor){if(!sabotageByPlayer.has(actor))sabotageByPlayer.set(actor,[]);sabotageByPlayer.get(actor).push(sab)}
   });
   const rows=rawPlayers.map(function(p){
-    const name=String(p.Name||"").trim(),role=crewtestRole(p.Role);
+    const name=nameOf(p.Name),role=crewtestRole(p.Role);
     const kills=killEvents.filter(function(e){return e.killer===name}).map(function(e){return e.victim}).filter(Boolean);
     const deathEvent=killByVictim.get(name);
     let death="Survit",deathPos=null,turn=null;
@@ -808,8 +869,9 @@ function crewtestMergeIntoGame(preview){
   if(!game)throw new Error("La game existante n\u0027est plus présente dans CREWTEST.");
   game.map=derived.map;game.winner=derived.win.winner||game.winner;game.method=derived.win.method||game.method;game.t1Deaths=derived.t1Deaths;game.startedAt=merged.StartedAt||game.startedAt;
   derived.rows.forEach(function(row){
-    const r=RECORDS.find(function(x){return x.gameId===game.id&&x.p===row.name});
+    const r=RECORDS.find(function(x){return x.gameId===game.id&&crewtestResolvePlayerName(x.p)===row.name});
     if(!r)return;
+    if(r.p!==row.name)r.p=row.name;
     r.role=row.role;
     r.reports=Math.max(Number(r.reports||0),row.reports);
     r.self=Math.max(Number(r.self||0),row.self);
@@ -856,7 +918,7 @@ function crewtestRecalculateImportedRepairs(){
     });
     if(!game)return;
     derived.rows.forEach(function(row){
-      const r=RECORDS.find(function(x){return x.gameId===game.id&&x.p===row.name});
+      const r=RECORDS.find(function(x){return x.gameId===game.id&&crewtestResolvePlayerName(x.p)===row.name});
       if(!r)return;
       const next=Math.max(Number(r.repair||0),Number(row.repair||0));
       if(next!==Number(r.repair||0)){r.repair=next;changed=true}
@@ -935,7 +997,7 @@ function crewtestRecalculateImportedVotes(){
     });
     if(!game)return;
     derived.rows.forEach(function(row){
-      const r=RECORDS.find(function(x){return x.gameId===game.id&&x.p===row.name});
+      const r=RECORDS.find(function(x){return x.gameId===game.id&&crewtestResolvePlayerName(x.p)===row.name});
       if(!r)return;
       const fields=["voteCast","votePlayer","voteImpostor","voteCrew","voteSkip","voteNoVote","voteSelf","crewVoteTotal","crewVoteCorrect","crewVoteWrong"];
       fields.forEach(function(field){
@@ -963,7 +1025,12 @@ function crewtestLoadState(){
     SESSIONS=state.sessions&&typeof state.sessions==="object"?state.sessions:{};
     GAMES=Array.isArray(state.games)?state.games:[];
     RECORDS=Array.isArray(state.records)?state.records:[];
-    PLAYERS=Array.isArray(state.players)?state.players:[];
+    PLAYERS=(Array.isArray(state.players)?state.players:[]).map(function(p){
+      return Object.assign({},p,{
+        aliases:crewtestParseAliases(p.aliases),
+        avatar_url:crewtestCleanAvatarUrl(p.avatar_url)
+      });
+    });
     SESSION_PARTICIPANTS=state.participants&&typeof state.participants==="object"?state.participants:{};
     TEST_IMPORTS=state.imports&&typeof state.imports==="object"?state.imports:{};
     DEFAULT_SESSION_PARTICIPANTS=Object.fromEntries(Object.keys(SESSIONS).map(function(id){return [id,[]]}));
@@ -1001,6 +1068,8 @@ function crewtestBuildPreview(data,sourceName){
   let comparison=null;
   if(!win.winner)warnings.push("Camp gagnant non reconnu.");
   if(!win.method)warnings.push("Méthode de victoire non reconnue.");
+  const unknownPlayers=(data.Players||[]).map(function(p){return String(p.Name||"").trim()}).filter(function(name){return name&&!crewtestFindPlayerByIdentity(name)});
+  if(unknownPlayers.length)warnings.push("Pseudo(s) non reconnu(s) : "+unknownPlayers.join(", ")+" — ils seront créés comme nouveaux joueurs si tu confirmes l’import.");
   if((data.Events||[]).some(function(e){return e.Type==="sabotage_end"}))warnings.push("Les anciennes V2/V2.1 ne permettent pas encore d\u0027attribuer fiablement tous les réparateurs.");
   if(!match&&GAMES.some(function(g){return g.session===sessionId&&Number(g.n)>=nextGame})){
     warnings.push("Import chronologique : les games suivantes seront renumérotées automatiquement.");
@@ -1030,7 +1099,10 @@ function crewtestRenderPreview(preview){
   const warn=document.getElementById("json-import-warnings");
   const confirmButton=document.getElementById("json-import-confirm");
   if(!box||!warn||!confirmButton)return;
-  const players=preview.data.Players.map(function(p){return esc(p.Name)+" ("+crewtestRole(p.Role)+")"}).join(", ");
+  const players=preview.data.Players.map(function(p){
+    const raw=String(p.Name||"").trim(),resolved=crewtestResolvePlayerName(raw);
+    return esc(raw)+(resolved&&resolved!==raw?" → "+esc(resolved):"")+" ("+crewtestRole(p.Role)+")";
+  }).join(", ");
   const matched=preview.match&&preview.match.info;
   const shownGame=matched?matched.gameNumber:preview.nextGame;
   const meta=SESSIONS[preview.sessionId]?SESSIONS[preview.sessionId].label+" — existante":sessionMetaFromId(preview.sessionId).label+" — sera créée";
@@ -1070,13 +1142,14 @@ function crewtestImportData(preview){
   if(!SESSIONS[sessionId])SESSIONS[sessionId]=sessionMetaFromId(sessionId);
 
   rawPlayers.forEach(function(p,i){
-    const name=String(p.Name||"").trim();
+    const rawName=String(p.Name||"").trim();
+    const name=crewtestResolvePlayerName(rawName);
     if(!name)return;
     if(!PLAYERS.some(function(x){return x.name===name})){
-      PLAYERS.push({id:"test-"+sessionId+"-"+i+"-"+name,name:name,handle:name,active:true,source:"json"});
+      PLAYERS.push({id:"test-"+sessionId+"-"+i+"-"+name,name:name,handle:name,aliases:[],avatar_url:"",active:true,source:"json"});
     }
   });
-  const participantSet=new Set((SESSION_PARTICIPANTS[sessionId]||[]).concat(rawPlayers.map(function(p){return String(p.Name||"").trim()}).filter(Boolean)));
+  const participantSet=new Set((SESSION_PARTICIPANTS[sessionId]||[]).concat(rawPlayers.map(function(p){return crewtestResolvePlayerName(p.Name)}).filter(Boolean)));
   SESSION_PARTICIPANTS[sessionId]=Array.from(participantSet);
 
   const killEvents=events.filter(function(e){return e.Type==="kill"}).map(function(e){
@@ -1091,15 +1164,15 @@ function crewtestImportData(preview){
   meetings.forEach(function(m){
     const value=String(m.ExileResult||"").toLowerCase();
     rawPlayers.forEach(function(p){
-      const name=String(p.Name||"");
-      if(name&&value.startsWith(name.toLowerCase()+" "))exiled.add(name);
+      const rawName=String(p.Name||"");
+      if(rawName&&value.startsWith(rawName.toLowerCase()+" "))exiled.add(nameOf(rawName));
     });
   });
   events.filter(function(e){return e.Type==="exile_result"}).forEach(function(e){
     const value=String(e.Detail||"").toLowerCase();
     rawPlayers.forEach(function(p){
-      const name=String(p.Name||"");
-      if(name&&value.startsWith(name.toLowerCase()+" "))exiled.add(name);
+      const rawName=String(p.Name||"");
+      if(rawName&&value.startsWith(rawName.toLowerCase()+" "))exiled.add(nameOf(rawName));
     });
   });
 
@@ -1130,7 +1203,7 @@ function crewtestImportData(preview){
     }
     if(!actor){
       const impostors=rawPlayers.filter(function(p){return crewtestRole(p.Role)==="Imposteur"});
-      if(impostors.length===1)actor=impostors[0].Name;
+      if(impostors.length===1)actor=nameOf(impostors[0].Name);
     }
     if(actor){
       if(!sabotageByPlayer.has(actor))sabotageByPlayer.set(actor,[]);
@@ -1149,7 +1222,7 @@ function crewtestImportData(preview){
   });
 
   rawPlayers.forEach(function(p,i){
-    const name=String(p.Name||"").trim();
+    const name=nameOf(p.Name);
     if(!name)return;
     const role=crewtestRole(p.Role);
     const kills=killEvents.filter(function(e){return e.killer===name}).map(function(e){return e.victim}).filter(Boolean);
@@ -1189,7 +1262,7 @@ function crewtestImportData(preview){
   crewtestSaveState();
 
   currentScope=SESSIONS[sessionId].month;
-  currentPlayer=String((rawPlayers[0]&&rawPlayers[0].Name)||currentPlayer);
+  currentPlayer=crewtestResolvePlayerName((rawPlayers[0]&&rawPlayers[0].Name)||currentPlayer);
   currentPlayerMonth=currentScope;
   currentPlayerMode="month";
   crewtestRefreshAll(sessionId);
@@ -1537,12 +1610,23 @@ function renderSession(id){
 function mostCommon(arr){const c={};arr.forEach(v=>c[v]=(c[v]||0)+1);return Object.entries(c).sort((a,b)=>b[1]-a[1])[0]?.[0]}
 
 /* ===== Fiche joueur ===== */
+function setMainPlayerAvatar(player){
+ const wrap=document.getElementById("p-avatar"),img=document.getElementById("p-avatar-img"),fallback=document.getElementById("p-avatar-fallback");
+ if(!wrap||!img||!fallback)return;
+ const name=player&&player.name?player.name:"?";
+ fallback.textContent=crewtestPlayerInitials(name);
+ const url=crewtestCleanAvatarUrl(player&&player.avatar_url);
+ img.onload=function(){img.hidden=false};
+ img.onerror=function(){img.hidden=true;img.removeAttribute("src")};
+ if(url){img.hidden=true;img.src=url}else{img.hidden=true;img.removeAttribute("src")}
+}
 function renderPlayerList(){
  const box=document.getElementById("player-list");
  box.innerHTML=sortedPlayers().map(p=>{
-   const has=RECORDS.some(r=>r.p===p.name);
-   return `<button class="player-btn ${p.name===currentPlayer?"active":""}" data-p="${esc(p.name)}">${esc(p.name)}<span>@${esc(p.handle)}${has?" • données":" • aucune grille"}</span></button>`
+   const has=RECORDS.some(r=>r.p===p.name),avatar=crewtestCleanAvatarUrl(p.avatar_url);
+   return `<button class="player-btn ${p.name===currentPlayer?"active":""}" data-p="${esc(p.name)}"><div class="player-list-avatar"><b>${esc(crewtestPlayerInitials(p.name))}</b>${avatar?`<img src="${esc(avatar)}" alt="" loading="lazy">`:""}</div><div class="player-btn-copy"><strong>${esc(p.name)}</strong><span>@${esc(p.handle)}${has?" • données":" • aucune grille"}</span></div></button>`
  }).join("");
+ box.querySelectorAll(".player-list-avatar img").forEach(img=>img.addEventListener("error",()=>{img.hidden=true}));
  box.querySelectorAll(".player-btn").forEach(b=>b.addEventListener("click",()=>{
    currentPlayer=b.dataset.p;
    currentPlayerMonth=latestMonth();
@@ -1599,6 +1683,7 @@ function renderPlayer(){
  const p=sortedPlayers().find(x=>x.name===currentPlayer);
  syncPlayerDetailTabs();
  if(!p){
+  setMainPlayerAvatar(null);
   document.getElementById("p-name").textContent="Aucun streamer";
   const twitchLink=document.getElementById("p-handle");twitchLink.textContent="";twitchLink.removeAttribute("href");
   document.getElementById("p-state").textContent="Aucun streamer enregistré";
@@ -1608,6 +1693,7 @@ function renderPlayer(){
  }
  const all=RECORDS.filter(r=>r.p===currentPlayer);
  let rr=currentPlayerMode==="all"?all:currentPlayerMode==="month"?all.filter(r=>SESSIONS[r.session]?.month===currentPlayerMonth):all.filter(r=>r.session===currentPlayerMode);
+ setMainPlayerAvatar(p);
  document.getElementById("p-name").textContent=p.name;
  const twitchLink=document.getElementById("p-handle");
  twitchLink.textContent="@"+p.handle+" ↗";
@@ -2037,6 +2123,14 @@ async function saveAdminParticipants(){
   const session=document.getElementById("admin-participant-session").value;
   const names=[...document.querySelectorAll("#admin-participants-list input:checked")].map(x=>x.value);
   const status=document.getElementById("admin-participants-status");
+  if(TEST_MODE){
+    SESSION_PARTICIPANTS[session]=Array.from(new Set(names));
+    crewtestSaveState();
+    if(currentEntrySession()===session){syncEntryPlayerOptions();refreshEventPlayerOptions()}
+    renderAll();
+    status.textContent=`${names.length} participant${names.length>1?"s":""} enregistré${names.length>1?"s":""} localement pour cette soirée.`;
+    return;
+  }
   try{
     await adminSaveParticipantsInSupabase(session,names);
     await reloadPublicData();
@@ -2045,9 +2139,9 @@ async function saveAdminParticipants(){
   }catch(error){status.textContent="Erreur Supabase : "+error.message}
 }
 function resetAdminPlayerForm(){
- const name=document.getElementById("admin-player-name"),handle=document.getElementById("admin-player-handle"),button=document.getElementById("admin-add-player-btn"),cancel=document.getElementById("admin-cancel-player-edit"),status=document.getElementById("admin-player-status");
+ const name=document.getElementById("admin-player-name"),handle=document.getElementById("admin-player-handle"),aliases=document.getElementById("admin-player-aliases"),avatar=document.getElementById("admin-player-avatar"),button=document.getElementById("admin-add-player-btn"),cancel=document.getElementById("admin-cancel-player-edit"),status=document.getElementById("admin-player-status");
  if(!name)return;
- name.value="";handle.value="";name.disabled=false;button.textContent="+ Ajouter le streamer";cancel.hidden=true;delete button.dataset.editName;
+ name.value="";handle.value="";if(aliases)aliases.value="";if(avatar)avatar.value="";name.disabled=false;button.textContent="+ Ajouter le streamer";cancel.hidden=true;delete button.dataset.editName;
  if(status)status.textContent="";
 }
 function renderAdminPlayers(){
@@ -2062,8 +2156,9 @@ function renderAdminPlayers(){
     const toggleLabel=p.active===false?"Réactiver":"Désactiver";
     const toggleClass=p.active===false?"primary":"secondary";
     const deleteButton=`<button type="button" class="danger admin-player-delete" data-name="${esc(p.name)}">Supprimer</button>`;
+    const aliases=crewtestParseAliases(p.aliases),avatar=crewtestCleanAvatarUrl(p.avatar_url);
     return `<div class="admin-player-row ${stateClass}">
-      <div><strong>${esc(p.name)}</strong><small>@${esc(p.handle)} • ${state}${used?" • données utilisées":""}</small></div>
+      <div class="admin-player-main"><div class="admin-player-preview"><b>${esc(crewtestPlayerInitials(p.name))}</b>${avatar?`<img src="${esc(avatar)}" alt="">`:""}</div><div><strong>${esc(p.name)}</strong><small>@${esc(p.handle)} • ${state}${used?" • données utilisées":""}</small><small>Alias : ${aliases.length?esc(aliases.join(", ")):"aucun"}${avatar?" • PP configurée":" • aucune PP"}</small></div></div>
       <div class="admin-player-actions">
         <button type="button" class="secondary admin-player-edit" data-name="${esc(p.name)}">Modifier</button>
         <button type="button" class="${toggleClass} admin-player-toggle" data-name="${esc(p.name)}">${toggleLabel}</button>
@@ -2071,6 +2166,7 @@ function renderAdminPlayers(){
       </div>
     </div>`;
   }).join("");
+ list.querySelectorAll(".admin-player-preview img").forEach(img=>img.addEventListener("error",()=>{img.hidden=true}));
  list.querySelectorAll(".admin-player-edit").forEach(btn=>btn.addEventListener("click",()=>editAdminPlayer(btn.dataset.name)));
  list.querySelectorAll(".admin-player-toggle").forEach(btn=>btn.addEventListener("click",()=>toggleAdminPlayer(btn.dataset.name)));
  list.querySelectorAll(".admin-player-delete").forEach(btn=>btn.addEventListener("click",()=>deleteAdminPlayer(btn.dataset.name)));
@@ -2078,42 +2174,55 @@ function renderAdminPlayers(){
  if(status&&!status.textContent)status.textContent="";
 }
 function editAdminPlayer(name){
- const p=PLAYERS.find(x=>x.name===name),nameInput=document.getElementById("admin-player-name"),handleInput=document.getElementById("admin-player-handle"),button=document.getElementById("admin-add-player-btn"),cancel=document.getElementById("admin-cancel-player-edit"),status=document.getElementById("admin-player-status");
+ const p=PLAYERS.find(x=>x.name===name),nameInput=document.getElementById("admin-player-name"),handleInput=document.getElementById("admin-player-handle"),aliasesInput=document.getElementById("admin-player-aliases"),avatarInput=document.getElementById("admin-player-avatar"),button=document.getElementById("admin-add-player-btn"),cancel=document.getElementById("admin-cancel-player-edit"),status=document.getElementById("admin-player-status");
  if(!p)return;
  const used=playerIsUsed(p.name);
- nameInput.value=p.name;handleInput.value=p.handle;nameInput.disabled=used;button.textContent="Enregistrer les modifications";button.dataset.editName=p.name;cancel.hidden=false;
- status.textContent=used?"Ce streamer est déjà utilisé : son nom est verrouillé pour préserver les anciennes données.":"Modifie le nom ou le pseudo Twitch puis enregistre.";
+ nameInput.value=p.name;handleInput.value=p.handle;if(aliasesInput)aliasesInput.value=crewtestParseAliases(p.aliases).join(", ");if(avatarInput)avatarInput.value=p.avatar_url||"";nameInput.disabled=used;button.textContent="Enregistrer les modifications";button.dataset.editName=p.name;cancel.hidden=false;
+ status.textContent=used?"Ce streamer est déjà utilisé : son nom est verrouillé, mais son Twitch, ses alias et sa PP restent modifiables.":"Modifie les informations du streamer puis enregistre.";
  nameInput.focus();
 }
 async function addAdminPlayer(){
   if(!requireAdmin())return;
-  const nameInput=document.getElementById("admin-player-name"),handleInput=document.getElementById("admin-player-handle"),button=document.getElementById("admin-add-player-btn"),status=document.getElementById("admin-player-status");
-  const oldName=button.dataset.editName||"",name=nameInput.value.trim(),handle=handleInput.value.trim().replace(/^@+/,"");
+  const nameInput=document.getElementById("admin-player-name"),handleInput=document.getElementById("admin-player-handle"),aliasesInput=document.getElementById("admin-player-aliases"),avatarInput=document.getElementById("admin-player-avatar"),button=document.getElementById("admin-add-player-btn"),status=document.getElementById("admin-player-status");
+  const oldName=button.dataset.editName||"",name=nameInput.value.trim(),handle=handleInput.value.trim().replace(/^@+/,""),aliases=crewtestUniqueAliases(name,handle,aliasesInput?aliasesInput.value:""),avatarRaw=avatarInput?avatarInput.value.trim():"",avatarUrl=crewtestCleanAvatarUrl(avatarRaw);
   if(!name||!handle){status.textContent="Renseigne le nom affiché et le pseudo Twitch.";return}
-  const exists=PLAYERS.some(p=>{const same=p.name.toLowerCase()===oldName.toLowerCase();return !same&&(p.name.toLowerCase()===name.toLowerCase()||p.handle.toLowerCase()===handle.toLowerCase())});
-  if(exists){status.textContent="Ce nom ou ce pseudo Twitch existe déjà.";return}
+  if(avatarRaw&&!avatarUrl){status.textContent="L’URL de la PP doit commencer par http:// ou https://.";return}
+  const conflict=crewtestIdentityConflict(name,handle,aliases,oldName);
+  if(conflict){status.textContent=`Ce nom, ce Twitch ou l’un de ces alias correspond déjà à ${conflict.name}.`;return}
   button.disabled=true;
   try{
     if(oldName){
       const p=PLAYERS.find(x=>x.name===oldName);if(!p){resetAdminPlayerForm();return}
       const used=playerIsUsed(oldName);
       if(used&&name!==oldName){status.textContent="Impossible de renommer ce streamer car il est déjà utilisé dans des données.";return}
-      p.name=name;p.handle=handle;
-      const saved=await updateAdminPlayerInSupabase(p);
-      p.id=saved.id;p.source=saved.source||p.source||"integrated";
+      p.name=name;p.handle=handle;p.aliases=aliases;p.avatar_url=avatarUrl;
       if(name!==oldName){
         RECORDS.forEach(r=>{if(r.p===oldName)r.p=name;if(Array.isArray(r.kills))r.kills=r.kills.map(k=>k===oldName?name:k);if(typeof r.death==="string")r.death=r.death.split(oldName).join(name)});
         Object.keys(SESSION_PARTICIPANTS).forEach(id=>{if(Array.isArray(SESSION_PARTICIPANTS[id]))SESSION_PARTICIPANTS[id]=SESSION_PARTICIPANTS[id].map(n=>n===oldName?name:n)});
         if(currentPlayer===oldName)currentPlayer=name;
       }
+      if(TEST_MODE){
+        crewtestSaveState();
+        refreshSessionSelectors();syncEntryPlayerOptions();refreshEventPlayerOptions();renderAll();renderAdmin();resetAdminPlayerForm();
+        status.textContent=`${name} a été modifié localement dans CREWTEST.`;return;
+      }
+      const saved=await updateAdminPlayerInSupabase(p);
+      p.id=saved.id;p.source=saved.source||p.source||"integrated";
       refreshSessionSelectors();syncEntryPlayerOptions();refreshEventPlayerOptions();renderAll();renderAdmin();resetAdminPlayerForm();
       status.textContent=`${name} a été modifié dans Supabase.`;return;
     }
+    if(TEST_MODE){
+      PLAYERS.push({id:"test-player-"+Date.now()+"-"+crewtestNormalizeIdentity(name),name:name,handle:handle,aliases:aliases,avatar_url:avatarUrl,active:true,source:"admin"});
+      crewtestSaveState();
+      if(!currentPlayer)currentPlayer=name;
+      refreshSessionSelectors();syncEntryPlayerOptions();refreshEventPlayerOptions();renderAll();renderAdmin();resetAdminPlayerForm();
+      status.textContent=`${name} a été ajouté localement dans CREWTEST.`;return;
+    }
     const saved=await insertAdminPlayerToSupabase({name,handle,active:true});
-    PLAYERS.push({id:saved.id,name:saved.name,handle:saved.handle,active:saved.active,source:saved.source});
+    PLAYERS.push({id:saved.id,name:saved.name,handle:saved.handle,aliases:aliases,avatar_url:avatarUrl,active:saved.active,source:saved.source});
     refreshSessionSelectors();syncEntryPlayerOptions();refreshEventPlayerOptions();renderAll();renderAdmin();resetAdminPlayerForm();
     status.textContent=`${name} a été ajouté dans Supabase.`;
-  }catch(error){status.textContent="Erreur Supabase : "+error.message}
+  }catch(error){status.textContent=(TEST_MODE?"Erreur CREWTEST : ":"Erreur Supabase : ")+error.message}
   finally{button.disabled=false}
 }
 async function toggleAdminPlayer(name){
@@ -2121,9 +2230,11 @@ async function toggleAdminPlayer(name){
   const p=PLAYERS.find(x=>x.name===name),status=document.getElementById("admin-player-status");if(!p)return;
   const previous=p.active;p.active=p.active===false;
   try{
-    await toggleAdminPlayerInSupabase(p);refreshSessionSelectors();syncEntryPlayerOptions();refreshEventPlayerOptions();renderAll();renderAdmin();
+    if(TEST_MODE)crewtestSaveState();
+    else await toggleAdminPlayerInSupabase(p);
+    refreshSessionSelectors();syncEntryPlayerOptions();refreshEventPlayerOptions();renderAll();renderAdmin();
     status.textContent=p.active?`${name} est de nouveau actif.`:`${name} est maintenant inactif. Il reste visible dans l’historique.`;
-  }catch(error){p.active=previous;status.textContent="Erreur Supabase : "+error.message}
+  }catch(error){p.active=previous;status.textContent=(TEST_MODE?"Erreur CREWTEST : ":"Erreur Supabase : ")+error.message}
 }
 async function deleteAdminPlayer(name){
   if(!requireAdmin())return;
@@ -2132,9 +2243,25 @@ async function deleteAdminPlayer(name){
   const warning=used?`\\n\\nCette suppression retirera aussi ${name} de ses anciennes statistiques, parties et listes de participants. Les autres joueurs conserveront leurs données, mais les références à ${name} seront supprimées.\\n\\nCette action est irréversible. Continuer ?`:`\\n\\nSupprimer ${name} de la liste des streamers ?`;
   if(!confirm(warning))return;
   try{
+    if(TEST_MODE){
+      PLAYERS=PLAYERS.filter(x=>x.name!==name);
+      RECORDS=RECORDS.filter(r=>r.p!==name);
+      RECORDS.forEach(r=>{
+        if(Array.isArray(r.kills))r.kills=r.kills.filter(k=>k!==name);
+        if(r.death==="Tué par "+name)r.death="Tué";
+      });
+      Object.keys(SESSION_PARTICIPANTS).forEach(id=>{
+        if(Array.isArray(SESSION_PARTICIPANTS[id]))SESSION_PARTICIPANTS[id]=SESSION_PARTICIPANTS[id].filter(n=>n!==name);
+      });
+      if(currentPlayer===name)currentPlayer=sortedPlayers()[0]?.name||"";
+      crewtestSaveState();
+      refreshSessionSelectors();syncEntryPlayerOptions();refreshEventPlayerOptions();renderAll();renderAdmin();resetAdminPlayerForm();
+      status.textContent=used?`${name} et ses données locales ont été supprimés de CREWTEST.`:`${name} a été supprimé de CREWTEST.`;
+      return;
+    }
     await deleteAdminPlayerInSupabase(p);await reloadPublicData();
     status.textContent=used?`${name} et ses données historiques ont été supprimés de Supabase.`:`${name} a été supprimé de Supabase.`;
-  }catch(error){status.textContent="Erreur Supabase : "+error.message}
+  }catch(error){status.textContent=(TEST_MODE?"Erreur CREWTEST : ":"Erreur Supabase : ")+error.message}
 }
 
 function deleteCrewtestGame(gameId){
