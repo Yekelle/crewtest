@@ -22,7 +22,7 @@ let RECORDS=[],GAMES=[],SESSION_PARTICIPANTS={},PLAYERS=[];
 let TEST_IMPORTS={};
 let pendingJsonImport=null;
 const CREWTEST_STORAGE_KEY="crewtest-json-lab-v1";
-let currentScope=latestMonth(),currentSessionDetailTab="overview",currentSessionId=null,currentPlayer="",currentPlayerMonth=latestMonth(),currentPlayerMode="month",currentPlayerDetailTab="overview",editingRecordKey=null;
+let currentScope=latestMonth(),currentSessionDetailTab="overview",currentSessionId=null,currentPlayer="",currentPlayerMonth=latestMonth(),currentPlayerMode="month",currentPlayerDetailTab="overview",editingRecordKey=null,currentAdminTab="sessions",currentAdminSessionId=null,currentAdminSessionTab="games",currentAdminGameId=null;
 
 /* ===== Authentification et données Supabase ===== */
 
@@ -2047,61 +2047,214 @@ document.getElementById("save-entry-btn").addEventListener("click",async()=>{
   }finally{saveButton.disabled=false}
 });
 
+function syncAdminMainTabs(){
+  const isAdmin=adminCanWrite();
+  if(!isAdmin&&currentAdminTab==="streamers")currentAdminTab="sessions";
+  document.querySelectorAll("#admin-main-tabs [data-admin-tab]").forEach(btn=>{
+    const allowed=btn.dataset.adminTab!=="streamers"||isAdmin;
+    btn.hidden=!allowed;
+    btn.classList.toggle("active",allowed&&btn.dataset.adminTab===currentAdminTab);
+  });
+  document.querySelectorAll("#admin-protected .admin-tab-panel").forEach(panel=>{
+    const target=panel.id==="admin-tab-"+currentAdminTab;
+    const allowed=!panel.hasAttribute("data-admin-only")||isAdmin;
+    panel.hidden=!(target&&allowed);
+  });
+}
+function syncAdminSessionTabs(){
+  const isAdmin=adminCanWrite();
+  if(!isAdmin&&currentAdminSessionTab!=="games")currentAdminSessionTab="games";
+  document.querySelectorAll("#admin-session-tabs [data-admin-session-tab]").forEach(btn=>{
+    const allowed=!btn.hasAttribute("data-admin-only")||isAdmin;
+    btn.hidden=!allowed;
+    btn.classList.toggle("active",allowed&&btn.dataset.adminSessionTab===currentAdminSessionTab);
+  });
+  document.querySelectorAll("#admin-session-workspace-content .admin-session-panel").forEach(panel=>{
+    const key=panel.id.replace("admin-session-panel-","");
+    const allowed=!panel.hasAttribute("data-admin-only")||isAdmin;
+    panel.hidden=!(allowed&&key===currentAdminSessionTab);
+  });
+}
+function selectAdminSession(id){
+  if(!SESSIONS[id])return;
+  currentAdminSessionId=id;
+  currentAdminSessionTab="games";
+  currentAdminGameId=null;
+  renderAdminSessions();
+}
+function renderAdminSessionWorkspace(){
+  const empty=document.getElementById("admin-session-workspace-empty");
+  const content=document.getElementById("admin-session-workspace-content");
+  const id=currentAdminSessionId&&SESSIONS[currentAdminSessionId]?currentAdminSessionId:null;
+  if(empty)empty.hidden=!!id;
+  if(content)content.hidden=!id;
+  if(!id)return;
+
+  const session=SESSIONS[id]||{};
+  const games=GAMES.filter(g=>g.session===id);
+  const records=RECORDS.filter(r=>r.session===id);
+  const participants=participantNamesForSession(id);
+  document.getElementById("admin-session-workspace-title").textContent=session.date||session.label||id;
+  document.getElementById("admin-session-workspace-meta").textContent=`${games.length} game${games.length!==1?"s":""} • ${records.length} fiche${records.length!==1?"s":""} • ${participants.length} participant${participants.length!==1?"s":""}`;
+  const dateInput=document.getElementById("admin-session-edit-date");
+  if(dateInput)dateInput.value=id;
+
+  syncAdminSessionTabs();
+  renderAdminGames();
+  if(adminCanWrite())renderAdminParticipants();
+}
+function renderAdminSessions(){
+  const box=document.getElementById("admin-sessions-list");
+  const status=document.getElementById("admin-manage-session-status");
+  if(!box)return;
+  const ids=sessionIds();
+  if(!currentAdminSessionId||!SESSIONS[currentAdminSessionId])currentAdminSessionId=ids[0]||null;
+
+  box.innerHTML=ids.map(id=>{
+    const games=GAMES.filter(g=>g.session===id).length;
+    const participants=participantNamesForSession(id).length;
+    const active=id===currentAdminSessionId?" active":"";
+    return `<button type="button" class="admin-session-choice${active}" data-session="${esc(id)}"><strong>${esc(SESSIONS[id]?.date||SESSIONS[id]?.label||id)}</strong><span>${games} game${games!==1?"s":""} • ${participants} participant${participants!==1?"s":""}</span></button>`;
+  }).join("");
+  if(!ids.length)box.innerHTML='<p class="muted">Aucune session enregistrée.</p>';
+  box.querySelectorAll(".admin-session-choice").forEach(btn=>btn.addEventListener("click",()=>selectAdminSession(btn.dataset.session)));
+  if(status&&!status.textContent)status.textContent="";
+  renderAdminSessionWorkspace();
+}
+function renderAdminGames(){
+  const list=document.getElementById("admin-games-list");
+  if(!list)return;
+  const sessionId=currentAdminSessionId;
+  const games=GAMES.filter(g=>g.session===sessionId).sort((a,b)=>Number(a.n)-Number(b.n));
+  if(!games.some(g=>String(g.id)===String(currentAdminGameId)))currentAdminGameId=games[0]?.id||null;
+
+  list.innerHTML=games.map(g=>{
+    const records=RECORDS.filter(r=>r.gameId===g.id||(r.session===g.session&&Number(r.g)===Number(g.n))).length;
+    const active=String(g.id)===String(currentAdminGameId)?" active":"";
+    return `<button type="button" class="admin-game-choice${active}" data-game-id="${esc(g.id)}"><strong>Game ${g.n}</strong><span>${esc(g.map||"—")} • ${esc(g.winner||"—")} • ${records} fiche${records!==1?"s":""}</span></button>`;
+  }).join("");
+  if(!games.length)list.innerHTML='<div class="admin-empty-state compact"><strong>Aucune game dans cette session</strong><span>Utilise « Nouvelle game » pour ouvrir la saisie.</span></div>';
+  list.querySelectorAll(".admin-game-choice").forEach(btn=>btn.addEventListener("click",()=>{
+    currentAdminGameId=btn.dataset.gameId;
+    renderAdminGames();
+  }));
+  renderAdminGameDetail();
+}
+function renderAdminGameDetail(){
+  const box=document.getElementById("admin-list");
+  const title=document.getElementById("admin-game-title");
+  const meta=document.getElementById("admin-game-meta");
+  const deleteGame=document.getElementById("admin-delete-game-btn");
+  if(!box||!title||!meta)return;
+
+  const game=GAMES.find(g=>String(g.id)===String(currentAdminGameId));
+  if(!game){
+    title.textContent="Aucune game";
+    meta.textContent=currentAdminSessionId?"Cette session ne contient encore aucune game.":"";
+    box.innerHTML="";
+    if(deleteGame)deleteGame.hidden=true;
+    return;
+  }
+
+  title.textContent=`Game ${game.n}`;
+  meta.textContent=`${game.map||"—"} • ${game.winner||"—"} • ${game.method||"—"}`;
+  if(deleteGame)deleteGame.hidden=!(TEST_MODE&&adminCanWrite());
+
+  const isAdmin=adminCanWrite();
+  const rows=RECORDS.filter(r=>r.gameId===game.id||(r.session===game.session&&Number(r.g)===Number(game.n))).sort((a,b)=>String(a.p).localeCompare(String(b.p),"fr",{sensitivity:"base"}));
+  box.innerHTML=rows.map(r=>{
+    const idx=RECORDS.indexOf(r);
+    const deleteButton=isAdmin?`<button class="danger admin-delete-record" data-i="${idx}" type="button">Supprimer</button>`:"";
+    return `<div class="admin-item"><div><strong>${esc(r.p)}</strong><small>${esc(r.role)} • ${resultFor(r)} • ${Number(r.kills?.length||0)} kill${Number(r.kills?.length||0)!==1?"s":""} • ${Number(r.reports||0)+Number(r.self||0)} report${Number(r.reports||0)+Number(r.self||0)!==1?"s":""}</small></div><div class="admin-item-actions"><button class="secondary admin-edit-record" data-i="${idx}" type="button">Modifier</button>${deleteButton}</div></div>`;
+  }).join("");
+  if(!rows.length)box.innerHTML='<p class="muted">Aucune fiche joueur enregistrée pour cette game.</p>';
+  box.querySelectorAll(".admin-edit-record").forEach(btn=>btn.addEventListener("click",()=>editRecordFromAdmin(Number(btn.dataset.i))));
+  if(isAdmin)box.querySelectorAll(".admin-delete-record").forEach(btn=>btn.addEventListener("click",()=>deleteAdminRecord(Number(btn.dataset.i))));
+}
+function openAdminNewGame(){
+  if(!requireEditor()||!currentAdminSessionId)return;
+  document.querySelectorAll(".nav").forEach(x=>x.classList.toggle("active",x.dataset.view==="entry"));
+  document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active",v.id==="view-entry"));
+  const sessionSel=document.getElementById("form-session");
+  ensureSelectValue(sessionSel,currentAdminSessionId,SESSIONS[currentAdminSessionId]?.label||currentAdminSessionId);
+  sessionSel.value=currentAdminSessionId;
+  populateGameSelect();
+  syncEntryPlayerOptions();
+  refreshEventPlayerOptions();
+  document.getElementById("new-game-btn")?.click();
+  window.scrollTo({top:document.getElementById("view-entry").offsetTop-80,behavior:"smooth"});
+}
 async function addAdminSession(){
   if(!requireAdmin())return;
   const input=document.getElementById("admin-new-session-date"),status=document.getElementById("admin-session-status"),id=input.value;
   if(!id){status.textContent="Choisis une date.";return}
   if(SESSIONS[id]&&!DELETED_SESSIONS.has(id)){status.textContent="Cette session existe déjà.";return}
   const meta=sessionMetaFromId(id);
+
+  if(TEST_MODE){
+    SESSIONS[id]={date:meta.date,month:meta.month,label:meta.label};
+    SESSION_PARTICIPANTS[id]=[];
+    DEFAULT_SESSION_PARTICIPANTS[id]=[];
+    currentAdminSessionId=id;
+    currentAdminSessionTab="games";
+    currentAdminGameId=null;
+    crewtestSaveState();
+    crewtestRefreshAll(id);
+    input.value="";
+    status.textContent=`Session du ${meta.label} ajoutée localement dans CREWTEST.`;
+    return;
+  }
+
   try{
     await adminCreateSessionInSupabase({id,date:meta.date,month:meta.month,label:meta.label});
+    currentAdminSessionId=id;
+    currentAdminSessionTab="games";
+    currentAdminGameId=null;
     await reloadPublicData();
-    document.getElementById("form-session").value=id;populateGameSelect();syncEntryPlayerOptions();refreshEventPlayerOptions();
-    const adminSel=document.getElementById("admin-participant-session");adminSel.value=id;renderAdminParticipants();
-    status.textContent=`Session du ${meta.label} ajoutée dans Supabase. Aucun membre n’est coché par défaut.`;
+    status.textContent=`Session du ${meta.label} ajoutée dans Supabase.`;
   }catch(error){status.textContent="Erreur Supabase : "+error.message}
 }
-function renderAdminSessions(){
- const box=document.getElementById("admin-sessions-list"),status=document.getElementById("admin-manage-session-status");
- const ids=sessionIds();
- box.innerHTML=ids.map(id=>{
-   const games=GAMES.filter(g=>g.session===id).length,records=RECORDS.filter(r=>r.session===id).length;
-   return `<div class="admin-session-row" data-session="${esc(id)}">
-     <div class="admin-session-main">
-       <strong>${esc(SESSIONS[id]?.date||id)}</strong>
-       <small>${games} game${games!==1?"s":""} • ${records} fiche${records!==1?"s":""}</small>
-     </div>
-     <label>Nouvelle date<input class="admin-session-edit-date" type="date" value="${esc(id)}"></label>
-     <div class="admin-session-actions">
-       <button type="button" class="secondary admin-session-edit">Modifier</button>
-       <button type="button" class="danger admin-session-delete">Supprimer</button>
-     </div>
-   </div>`;
- }).join("");
- box.querySelectorAll(".admin-session-edit").forEach(btn=>btn.addEventListener("click",()=>editAdminSession(btn.closest(".admin-session-row"))));
- box.querySelectorAll(".admin-session-delete").forEach(btn=>btn.addEventListener("click",()=>deleteAdminSession(btn.closest(".admin-session-row"))));
- if(!ids.length)box.innerHTML='<p class="muted">Aucune session enregistrée.</p>';
- if(status&&!status.textContent)status.textContent="";
-}
-async function editAdminSession(row){
-  if(!requireAdmin())return;
-  const oldId=row.dataset.session,newId=row.querySelector(".admin-session-edit-date").value,status=document.getElementById("admin-manage-session-status");
+async function editSelectedAdminSession(){
+  if(!requireAdmin()||!currentAdminSessionId)return;
+  const oldId=currentAdminSessionId;
+  const input=document.getElementById("admin-session-edit-date");
+  const status=document.getElementById("admin-manage-session-status");
+  const newId=input?.value||"";
   if(!newId){status.textContent="Choisis une nouvelle date.";return}
   if(newId===oldId){status.textContent="La date n’a pas changé.";return}
   if(SESSIONS[newId]){status.textContent="Une session existe déjà à cette date.";return}
   const meta=sessionMetaFromId(newId);
+
+  if(TEST_MODE){
+    SESSIONS[newId]={date:meta.date,month:meta.month,label:meta.label};
+    delete SESSIONS[oldId];
+    GAMES.forEach(g=>{if(g.session===oldId)g.session=newId});
+    RECORDS.forEach(r=>{if(r.session===oldId)r.session=newId});
+    SESSION_PARTICIPANTS[newId]=Array.isArray(SESSION_PARTICIPANTS[oldId])?SESSION_PARTICIPANTS[oldId].slice():[];
+    delete SESSION_PARTICIPANTS[oldId];
+    DEFAULT_SESSION_PARTICIPANTS[newId]=[];
+    delete DEFAULT_SESSION_PARTICIPANTS[oldId];
+    Object.values(TEST_IMPORTS).filter(Boolean).forEach(info=>{if(info.sessionId===oldId)info.sessionId=newId});
+    currentAdminSessionId=newId;
+    crewtestSaveState();
+    crewtestRefreshAll(newId);
+    status.textContent=`Session déplacée au ${meta.label} dans CREWTEST.`;
+    return;
+  }
+
   try{
     await adminUpdateSessionInSupabase(oldId,newId,meta);
+    currentAdminSessionId=newId;
     await reloadPublicData();
-    const adminSel=document.getElementById("admin-participant-session");
-    if([...adminSel.options].some(o=>o.value===newId)){adminSel.value=newId;renderAdminParticipants()}
-    status.textContent=`Session déplacée du ${oldId.split("-").reverse().join("/")} au ${meta.label} dans Supabase.`;
+    status.textContent=`Session déplacée au ${meta.label} dans Supabase.`;
   }catch(error){status.textContent="Erreur Supabase : "+error.message}
 }
-async function deleteAdminSession(row){
-  if(!requireAdmin())return;
-  const id=row.dataset.session,status=document.getElementById("admin-manage-session-status");
-  const games=GAMES.filter(g=>g.session===id).length,records=RECORDS.filter(r=>r.session===id).length;
+async function deleteSelectedAdminSession(){
+  if(!requireAdmin()||!currentAdminSessionId)return;
+  const id=currentAdminSessionId;
+  const status=document.getElementById("admin-manage-session-status");
+  const games=GAMES.filter(g=>g.session===id).length;
+  const records=RECORDS.filter(r=>r.session===id).length;
   const label=SESSIONS[id]?.label||id;
   if(!confirm(`Supprimer définitivement la session du ${label} ?\n\nCela supprimera aussi ${games} game(s) et ${records} fiche(s) joueur associée(s).\n\nCette action est irréversible.`))return;
 
@@ -2111,55 +2264,63 @@ async function deleteAdminSession(row){
     RECORDS=RECORDS.filter(r=>r.session!==id&&!removedGameIds.has(r.gameId));
     delete SESSION_PARTICIPANTS[id];
     delete SESSIONS[id];
-    for(const [fp,info] of Object.entries(TEST_IMPORTS)){
-      if(info?.sessionId===id)delete TEST_IMPORTS[fp];
-    }
+    for(const [fp,info] of Object.entries(TEST_IMPORTS))if(info?.sessionId===id)delete TEST_IMPORTS[fp];
     DEFAULT_SESSION_PARTICIPANTS=Object.fromEntries(Object.keys(SESSIONS).map(sid=>[sid,[]]));
+    currentAdminSessionId=null;
+    currentAdminGameId=null;
     crewtestSaveState();
     crewtestRefreshAll();
-    status.textContent=`Session du ${label} supprimée de CREWTEST.`;
+    const nextStatus=document.getElementById("admin-manage-session-status");
+    if(nextStatus)nextStatus.textContent=`Session du ${label} supprimée de CREWTEST.`;
     return;
   }
 
-  if(sessionIds().length<=1){status.textContent="Impossible de supprimer la dernière session.";return}
   try{
     await adminDeleteSessionInSupabase(id);
+    currentAdminSessionId=null;
+    currentAdminGameId=null;
     await reloadPublicData();
-    status.textContent=`Session du ${label} supprimée de Supabase.`;
+    const nextStatus=document.getElementById("admin-manage-session-status");
+    if(nextStatus)nextStatus.textContent=`Session du ${label} supprimée de Supabase.`;
   }catch(error){status.textContent="Erreur Supabase : "+error.message}
 }
 function renderAdminParticipants(){
- const sessionSel=document.getElementById("admin-participant-session"),list=document.getElementById("admin-participants-list");
- const sessions=Object.entries(SESSIONS).sort((a,b)=>b[0].localeCompare(a[0]));
- const old=sessionSel.value;
- sessionSel.innerHTML=sessions.map(([id,s])=>`<option value="${esc(id)}">${esc(s.label||s.date||id)}</option>`).join("");
- if(sessions.some(([id])=>id===old))sessionSel.value=old;
- const selected=new Set(participantNamesForSession(sessionSel.value));
- list.innerHTML=sortedPlayers().map(p=>{const inactive=p.active===false&&!selected.has(p.name);return `<label class="participant-check ${p.active===false?"inactive":""}"><input type="checkbox" value="${esc(p.name)}" ${selected.has(p.name)?"checked":""} ${inactive?"disabled":""}><span>${esc(p.name)}${p.active===false?" <small>(inactif)</small>":""}</span></label>`}).join("");
+  const list=document.getElementById("admin-participants-list");
+  if(!list)return;
+  const session=currentAdminSessionId;
+  if(!session||!SESSIONS[session]){list.innerHTML='<p class="muted">Aucune session sélectionnée.</p>';return}
+  const selected=new Set(participantNamesForSession(session));
+  list.innerHTML=sortedPlayers().map(p=>{
+    const inactive=p.active===false&&!selected.has(p.name);
+    return `<label class="participant-check ${p.active===false?"inactive":""}"><input type="checkbox" value="${esc(p.name)}" ${selected.has(p.name)?"checked":""} ${inactive?"disabled":""}><span>${esc(p.name)}${p.active===false?" <small>(inactif)</small>":""}</span></label>`;
+  }).join("");
 }
 function clearAdminParticipants(){
- document.querySelectorAll("#admin-participants-list input[type=\"checkbox\"]").forEach(x=>x.checked=false);
- document.getElementById("admin-participants-status").textContent="Tous les participants ont été décochés. Clique sur Enregistrer pour valider.";
+  document.querySelectorAll("#admin-participants-list input[type=\"checkbox\"]").forEach(x=>x.checked=false);
+  const status=document.getElementById("admin-participants-status");
+  if(status)status.textContent="Tous les participants ont été décochés. Clique sur Enregistrer pour valider.";
 }
 async function saveAdminParticipants(){
   if(!requireAdmin())return;
-  const session=document.getElementById("admin-participant-session").value;
-  const names=[...document.querySelectorAll("#admin-participants-list input:checked")].map(x=>x.value);
+  const session=currentAdminSessionId;
   const status=document.getElementById("admin-participants-status");
+  if(!session||!SESSIONS[session]){if(status)status.textContent="Aucune session sélectionnée.";return}
+  const names=[...document.querySelectorAll("#admin-participants-list input:checked")].map(x=>x.value);
   if(TEST_MODE){
     SESSION_PARTICIPANTS[session]=Array.from(new Set(names));
     crewtestSaveState();
     if(currentEntrySession()===session){syncEntryPlayerOptions();refreshEventPlayerOptions()}
     renderAll();
-    status.textContent=`${names.length} participant${names.length>1?"s":""} enregistré${names.length>1?"s":""} localement pour cette soirée.`;
+    renderAdminSessions();
+    if(status)status.textContent=`${names.length} participant${names.length>1?"s":""} enregistré${names.length>1?"s":""} localement pour cette soirée.`;
     return;
   }
   try{
     await adminSaveParticipantsInSupabase(session,names);
     await reloadPublicData();
     if(currentEntrySession()===session){syncEntryPlayerOptions();refreshEventPlayerOptions()}
-    status.textContent=`${names.length} participant${names.length>1?"s":""} enregistré${names.length>1?"s":""} dans Supabase pour cette soirée.`;
-  }catch(error){status.textContent="Erreur Supabase : "+error.message}
+    if(status)status.textContent=`${names.length} participant${names.length>1?"s":""} enregistré${names.length>1?"s":""} dans Supabase pour cette soirée.`;
+  }catch(error){if(status)status.textContent="Erreur Supabase : "+error.message}
 }
 function resetAdminPlayerForm(){
  const name=document.getElementById("admin-player-name"),handle=document.getElementById("admin-player-handle"),aliases=document.getElementById("admin-player-aliases"),avatar=document.getElementById("admin-player-avatar"),button=document.getElementById("admin-add-player-btn"),cancel=document.getElementById("admin-cancel-player-edit"),status=document.getElementById("admin-player-status");
@@ -2317,24 +2478,12 @@ function deleteCrewtestGame(gameId){
 function renderAdmin(){
   if(!editorCanWrite()){renderAdminAccess();return}
   const isAdmin=adminCanWrite();
-  const adminOnly=document.getElementById("admin-only-tools");
-  if(adminOnly)adminOnly.hidden=!isAdmin;
-  if(isAdmin){renderAdminPlayers();renderAdminSessions();renderAdminParticipants()}
-  const box=document.getElementById("admin-list"),sorted=[...RECORDS].sort((a,b)=>b.session.localeCompare(a.session)||b.g-a.g||a.p.localeCompare(b.p));
-  const gameButtons=new Set();
-  box.innerHTML=sorted.map(r=>{
-    const idx=RECORDS.indexOf(r),g=gameFor(r);
-    const deleteButton=isAdmin?`<button class="danger admin-delete-record" data-i="${idx}" type="button">Supprimer fiche</button>`:"";
-    let deleteGameButton="";
-    if(TEST_MODE&&isAdmin&&g&&!gameButtons.has(g.id)){
-      gameButtons.add(g.id);
-      deleteGameButton=`<button class="danger admin-delete-game" data-game-id="${esc(g.id)}" type="button">Supprimer la game</button>`;
-    }
-    return `<div class="admin-item"><div><strong>${esc(r.p)} • ${esc(SESSIONS[r.session]?.label||r.session)} • Game ${r.g}</strong><small>${esc(g?.map||"—")} • ${esc(r.role)} • ${resultFor(r)}</small></div><div class="admin-item-actions"><button class="secondary admin-edit-record" data-i="${idx}" type="button">Modifier</button>${deleteButton}${deleteGameButton}</div></div>`;
-  }).join("");
-  box.querySelectorAll(".admin-edit-record").forEach(b=>b.addEventListener("click",()=>editRecordFromAdmin(Number(b.dataset.i))));
-  if(isAdmin)box.querySelectorAll(".admin-delete-record").forEach(b=>b.addEventListener("click",()=>deleteAdminRecord(Number(b.dataset.i))));
-  if(TEST_MODE&&isAdmin)box.querySelectorAll(".admin-delete-game").forEach(b=>b.addEventListener("click",()=>deleteCrewtestGame(b.dataset.gameId)));
+  document.querySelectorAll("#view-admin [data-admin-only]").forEach(el=>{el.hidden=!isAdmin});
+  if(!isAdmin&&currentAdminTab==="streamers")currentAdminTab="sessions";
+  if(!isAdmin&&currentAdminSessionTab!=="games")currentAdminSessionTab="games";
+  syncAdminMainTabs();
+  renderAdminSessions();
+  if(isAdmin)renderAdminPlayers();
 }
 async function deleteAdminRecord(index){
   if(!requireAdmin())return;
@@ -2379,7 +2528,27 @@ if(!TEST_MODE){
     setTimeout(()=>refreshAdminAuth(session||null),0);
   });
 }
-document.getElementById("admin-add-session-btn").addEventListener("click",addAdminSession);document.getElementById("admin-participant-session").addEventListener("change",renderAdminParticipants);document.getElementById("clear-participants-btn").addEventListener("click",clearAdminParticipants);document.getElementById("save-participants-btn").addEventListener("click",saveAdminParticipants);document.getElementById("admin-add-player-btn").addEventListener("click",addAdminPlayer);document.getElementById("admin-cancel-player-edit").addEventListener("click",resetAdminPlayerForm);
+document.getElementById("admin-add-session-btn").addEventListener("click",addAdminSession);
+document.getElementById("clear-participants-btn").addEventListener("click",clearAdminParticipants);
+document.getElementById("save-participants-btn").addEventListener("click",saveAdminParticipants);
+document.getElementById("admin-add-player-btn").addEventListener("click",addAdminPlayer);
+document.getElementById("admin-cancel-player-edit").addEventListener("click",resetAdminPlayerForm);
+document.getElementById("admin-session-edit-btn").addEventListener("click",editSelectedAdminSession);
+document.getElementById("admin-session-delete-btn").addEventListener("click",deleteSelectedAdminSession);
+document.getElementById("admin-new-game-btn").addEventListener("click",openAdminNewGame);
+document.getElementById("admin-delete-game-btn").addEventListener("click",()=>{if(currentAdminGameId)deleteCrewtestGame(currentAdminGameId)});
+document.querySelectorAll("#admin-main-tabs [data-admin-tab]").forEach(btn=>btn.addEventListener("click",()=>{
+  currentAdminTab=btn.dataset.adminTab;
+  syncAdminMainTabs();
+  if(currentAdminTab==="sessions")renderAdminSessions();
+  else if(adminCanWrite())renderAdminPlayers();
+}));
+document.querySelectorAll("#admin-session-tabs [data-admin-session-tab]").forEach(btn=>btn.addEventListener("click",()=>{
+  currentAdminSessionTab=btn.dataset.adminSessionTab;
+  syncAdminSessionTabs();
+  if(currentAdminSessionTab==="games")renderAdminGames();
+  if(currentAdminSessionTab==="participants"&&adminCanWrite())renderAdminParticipants();
+}));
 document.getElementById("admin-reset").addEventListener("click",async()=>{
   if(!requireEditor())return;
   if(TEST_MODE){

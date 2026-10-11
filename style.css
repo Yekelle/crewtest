@@ -332,6 +332,161 @@ footer{position:relative;z-index:1;text-align:center;color:#6f889a;font-size:12p
 }
 
 
+/* ===== Admin : navigation Sessions / Streamers ===== */
+.admin-main-tabs{
+  margin:18px 0 16px;
+  padding-bottom:14px;
+  border-bottom:1px solid rgba(149,191,216,.14);
+}
+.admin-tab-panel[hidden],
+.admin-session-panel[hidden],
+#admin-session-workspace-content[hidden],
+#admin-session-workspace-empty[hidden],
+#view-admin [data-admin-only][hidden]{
+  display:none !important;
+}
+.admin-session-browser{
+  display:grid;
+  grid-template-columns:minmax(230px,300px) minmax(0,1fr);
+  gap:16px;
+  align-items:start;
+}
+.admin-session-sidebar{
+  position:sticky;
+  top:76px;
+}
+.admin-session-create-compact{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:8px;
+  align-items:end;
+  margin:14px 0 6px;
+  padding-bottom:14px;
+  border-bottom:1px solid rgba(149,191,216,.12);
+}
+.admin-session-create-compact label{min-width:0}
+.admin-session-nav{
+  margin-top:12px;
+}
+.admin-session-choice,
+.admin-game-choice{
+  width:100%;
+  display:block;
+  text-align:left;
+  color:var(--text);
+  border:1px solid #173f59;
+  background:#081a28;
+  border-radius:11px;
+  padding:12px 13px;
+  cursor:pointer;
+  transition:.15s ease;
+}
+.admin-session-choice:hover,
+.admin-game-choice:hover{
+  border-color:#237cab;
+  background:#0a2233;
+}
+.admin-session-choice.active,
+.admin-game-choice.active{
+  border-color:var(--cyan);
+  background:#0b2a40;
+  box-shadow:0 0 0 1px rgba(42,203,255,.12) inset;
+}
+.admin-session-choice strong,
+.admin-game-choice strong{display:block}
+.admin-session-choice span,
+.admin-game-choice span{
+  display:block;
+  margin-top:4px;
+  color:var(--muted);
+  font-size:12px;
+}
+.admin-session-workspace{
+  min-height:360px;
+}
+.admin-empty-state{
+  min-height:220px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  text-align:center;
+  color:var(--muted);
+}
+.admin-empty-state strong{
+  color:var(--text);
+  font-size:18px;
+}
+.admin-empty-state.compact{
+  min-height:110px;
+  border:1px dashed #173f59;
+  border-radius:11px;
+}
+.admin-session-workspace-head h3{margin-bottom:4px}
+.admin-kicker{
+  display:block;
+  color:var(--cyan);
+  font-size:10px;
+  font-weight:900;
+  letter-spacing:.13em;
+  margin-bottom:4px;
+}
+.admin-session-tabs{
+  margin:16px 0 14px;
+  padding-top:14px;
+  border-top:1px solid rgba(149,191,216,.14);
+}
+.admin-games-list{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(155px,1fr));
+  gap:9px;
+  margin-bottom:16px;
+}
+.admin-game-detail{
+  padding-top:14px;
+  border-top:1px solid rgba(149,191,216,.14);
+}
+.admin-game-detail-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:12px;
+}
+.admin-game-detail-head h4,
+.admin-session-panel h4{
+  margin:0 0 5px;
+  font-size:18px;
+}
+.admin-game-detail .admin-list{margin-top:12px}
+.admin-session-settings{
+  display:grid;
+  gap:14px;
+}
+.admin-session-settings label{
+  max-width:320px;
+}
+.admin-session-settings-actions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
+#admin-session-panel-participants .participant-grid{
+  margin-top:14px;
+}
+@media(max-width:900px){
+  .admin-session-browser{grid-template-columns:1fr}
+  .admin-session-sidebar{position:static}
+}
+@media(max-width:620px){
+  .admin-session-create-compact{grid-template-columns:1fr}
+  .admin-games-list{grid-template-columns:1fr 1fr}
+  .admin-game-detail-head{flex-direction:column}
+}
+@media(max-width:430px){
+  .admin-games-list{grid-template-columns:1fr}
+}
+
 /* ===== Admin : modifier / supprimer les sessions ===== */
 .admin-sessions-list{
   display:grid;

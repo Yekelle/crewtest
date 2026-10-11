@@ -307,87 +307,141 @@
   <section id="view-admin" class="view">
     <article class="glass-panel content-panel">
       <div class="section-head">
-        <div><div class="section-title"><span class="section-icon">⚙</span><h2>Gestion</h2></div><p>Connexion Admin ou Helper. Les Helpers peuvent saisir et modifier les fiches ; les réglages structurels restent réservés aux Admins.</p></div>
+        <div><div class="section-title"><span class="section-icon">⚙</span><h2>Gestion</h2></div><p>Les sessions et leurs games sont regroupées ici pour éviter de parcourir toute la page. Les réglages structurels restent réservés aux Admins.</p></div>
         <button id="admin-reset" class="secondary">Recharger les données</button>
       </div>
+
       <div id="admin-auth-panel" class="subpanel admin-auth-panel"></div>
+
       <div id="admin-protected">
-      <div id="admin-only-tools">
-      <div class="subpanel admin-session-create">
-        <div class="subpanel-head">
-          <div>
-            <h3>Ajouter une session</h3>
-            <p>Crée une nouvelle soirée à partir de sa date. Elle sera ensuite disponible dans Sessions, Saisie et la sélection des participants.</p>
-          </div>
-          <button id="admin-add-session-btn" class="primary" type="button">+ Ajouter</button>
+        <div id="admin-main-tabs" class="tabs admin-main-tabs" aria-label="Sections de gestion">
+          <button class="tab active" type="button" data-admin-tab="sessions">Sessions</button>
+          <button class="tab" type="button" data-admin-tab="streamers" data-admin-only>Streamers</button>
         </div>
-        <label class="admin-session-date">Date
-          <input id="admin-new-session-date" type="date">
-        </label>
-        <span id="admin-session-status" class="muted"></span>
-      </div>
-      <div class="subpanel admin-session-manage gap-top">
-        <div class="subpanel-head">
-          <div>
-            <h3>Gérer les sessions</h3>
-            <p>Corrige la date d’une soirée ou supprime-la en cas d’erreur. Modifier la date conserve les games, fiches et participants associés.</p>
+
+        <section id="admin-tab-sessions" class="admin-tab-panel">
+          <div class="admin-session-browser">
+            <aside class="subpanel admin-session-sidebar">
+              <div class="subpanel-head">
+                <div>
+                  <h3>Sessions</h3>
+                  <p>Choisis une soirée pour accéder directement à ses games.</p>
+                </div>
+              </div>
+
+              <div class="admin-session-create-compact" data-admin-only>
+                <label>Nouvelle session
+                  <input id="admin-new-session-date" type="date">
+                </label>
+                <button id="admin-add-session-btn" class="primary" type="button">+ Ajouter</button>
+              </div>
+              <span id="admin-session-status" class="muted"></span>
+
+              <div id="admin-sessions-list" class="admin-sessions-list admin-session-nav"></div>
+            </aside>
+
+            <div class="subpanel admin-session-workspace">
+              <div id="admin-session-workspace-empty" class="admin-empty-state">
+                <strong>Aucune session sélectionnée</strong>
+                <span>Ajoute une soirée ou sélectionne-en une dans la colonne de gauche.</span>
+              </div>
+
+              <div id="admin-session-workspace-content" hidden>
+                <div class="subpanel-head admin-session-workspace-head">
+                  <div>
+                    <small class="admin-kicker">SESSION</small>
+                    <h3 id="admin-session-workspace-title">Session</h3>
+                    <p id="admin-session-workspace-meta"></p>
+                  </div>
+                  <button id="admin-new-game-btn" class="primary" type="button">+ Nouvelle game</button>
+                </div>
+
+                <div id="admin-session-tabs" class="tabs admin-session-tabs">
+                  <button class="tab active" type="button" data-admin-session-tab="games">Games</button>
+                  <button class="tab" type="button" data-admin-session-tab="participants" data-admin-only>Participants</button>
+                  <button class="tab" type="button" data-admin-session-tab="settings" data-admin-only>Paramètres</button>
+                </div>
+
+                <div id="admin-session-panel-games" class="admin-session-panel">
+                  <div id="admin-games-list" class="admin-games-list"></div>
+                  <div id="admin-game-detail" class="admin-game-detail">
+                    <div class="admin-game-detail-head">
+                      <div>
+                        <h4 id="admin-game-title">Aucune game</h4>
+                        <p id="admin-game-meta" class="muted"></p>
+                      </div>
+                      <button id="admin-delete-game-btn" class="danger" type="button" hidden>Supprimer la game</button>
+                    </div>
+                    <div id="admin-list" class="admin-list"></div>
+                  </div>
+                </div>
+
+                <div id="admin-session-panel-participants" class="admin-session-panel" data-admin-only hidden>
+                  <div class="subpanel-head">
+                    <div>
+                      <h4>Participants de la soirée</h4>
+                      <p>Seuls les membres cochés apparaîtront dans la saisie de cette session.</p>
+                    </div>
+                    <div class="participant-actions">
+                      <button id="clear-participants-btn" class="secondary" type="button">Tout décocher</button>
+                      <button id="save-participants-btn" class="primary" type="button">Enregistrer</button>
+                    </div>
+                  </div>
+                  <div id="admin-participants-list" class="participant-grid"></div>
+                  <span id="admin-participants-status" class="muted"></span>
+                </div>
+
+                <div id="admin-session-panel-settings" class="admin-session-panel" data-admin-only hidden>
+                  <div class="admin-session-settings">
+                    <div>
+                      <h4>Paramètres de la session</h4>
+                      <p>Modifier la date conserve les games, fiches et participants associés.</p>
+                    </div>
+                    <label>Nouvelle date
+                      <input id="admin-session-edit-date" type="date">
+                    </label>
+                    <div class="admin-session-settings-actions">
+                      <button id="admin-session-edit-btn" class="secondary" type="button">Modifier la date</button>
+                      <button id="admin-session-delete-btn" class="danger" type="button">Supprimer la session</button>
+                    </div>
+                    <span id="admin-manage-session-status" class="muted"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-        <div id="admin-sessions-list" class="admin-sessions-list"></div>
-        <span id="admin-manage-session-status" class="muted"></span>
-      </div>
-      <div class="subpanel admin-participants-panel gap-top">
-        <div class="subpanel-head">
-          <div>
-            <h3>Participants de la soirée</h3>
-            <p>Seuls les membres cochés apparaîtront dans la saisie de cette session. La page Joueurs garde tous les membres du Crew.</p>
+        </section>
+
+        <section id="admin-tab-streamers" class="admin-tab-panel" data-admin-only hidden>
+          <div class="subpanel admin-players-panel">
+            <div class="subpanel-head">
+              <div>
+                <h3>Gérer les streamers</h3>
+                <p>Ajoute les membres du Crew, leurs alias en jeu et leur PP. En mode test, ces données restent uniquement dans le stockage local de CREWTEST.</p>
+              </div>
+            </div>
+            <div class="admin-player-form">
+              <label>Nom affiché
+                <input id="admin-player-name" type="text" placeholder="NouveauStreamer" maxlength="40">
+              </label>
+              <label>Pseudo Twitch
+                <input id="admin-player-handle" type="text" placeholder="nouveau_streamer" maxlength="40">
+              </label>
+              <label>Alias en jeu
+                <input id="admin-player-aliases" type="text" placeholder="Alias1, Alias2, Alias3" maxlength="300">
+              </label>
+              <label>URL de la PP
+                <input id="admin-player-avatar" type="url" placeholder="https://..." maxlength="500">
+              </label>
+              <div class="admin-player-form-actions">
+                <button id="admin-add-player-btn" class="primary" type="button">+ Ajouter le streamer</button>
+                <button id="admin-cancel-player-edit" class="secondary" type="button" hidden>Annuler</button>
+              </div>
+            </div>
+            <span id="admin-player-status" class="muted"></span>
+            <div id="admin-players-list" class="admin-players-list"></div>
           </div>
-          <div class="participant-actions"><button id="clear-participants-btn" class="secondary" type="button">Tout décocher</button><button id="save-participants-btn" class="primary" type="button">Enregistrer</button></div>
-        </div>
-        <label class="admin-session-select">Session
-          <select id="admin-participant-session"></select>
-        </label>
-        <div id="admin-participants-list" class="participant-grid"></div>
-        <span id="admin-participants-status" class="muted"></span>
-      </div>
-      <div class="subpanel admin-players-panel gap-top">
-        <div class="subpanel-head">
-          <div>
-            <h3>Gérer les streamers</h3>
-            <p>Ajoute les membres du Crew, leurs alias en jeu et leur PP. En mode test, ces données restent uniquement dans le stockage local de CREWTEST.</p>
-          </div>
-        </div>
-        <div class="admin-player-form">
-          <label>Nom affiché
-            <input id="admin-player-name" type="text" placeholder="NouveauStreamer" maxlength="40">
-          </label>
-          <label>Pseudo Twitch
-            <input id="admin-player-handle" type="text" placeholder="nouveau_streamer" maxlength="40">
-          </label>
-          <label>Alias en jeu
-            <input id="admin-player-aliases" type="text" placeholder="Alias1, Alias2, Alias3" maxlength="300">
-          </label>
-          <label>URL de la PP
-            <input id="admin-player-avatar" type="url" placeholder="https://..." maxlength="500">
-          </label>
-          <div class="admin-player-form-actions">
-            <button id="admin-add-player-btn" class="primary" type="button">+ Ajouter le streamer</button>
-            <button id="admin-cancel-player-edit" class="secondary" type="button" hidden>Annuler</button>
-          </div>
-        </div>
-        <span id="admin-player-status" class="muted"></span>
-        <div id="admin-players-list" class="admin-players-list"></div>
-      </div>
-      </div>
-      <div class="subpanel gap-top">
-        <div class="subpanel-head">
-          <div>
-            <h3>Fiches enregistrées</h3>
-            <p>Les Admins peuvent modifier ou supprimer les fiches. Les Helpers peuvent les modifier, mais pas les supprimer.</p>
-          </div>
-        </div>
-        <div id="admin-list" class="admin-list"></div>
-      </div>
+        </section>
       </div>
     </article>
   </section>
