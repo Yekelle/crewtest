@@ -21,7 +21,7 @@ let RECORDS=[],GAMES=[],SESSION_PARTICIPANTS={},PLAYERS=[];
 let TEST_IMPORTS={};
 let pendingJsonImport=null;
 const CREWTEST_STORAGE_KEY="crewtest-json-lab-v1";
-let currentScope=latestMonth(),currentSessionDetailTab="overview",currentSessionId=null,currentPlayer="",currentPlayerMonth=latestMonth(),currentPlayerMode="month",currentPlayerDetailTab="overview",editingRecordKey=null,currentAdminTab="sessions",currentAdminSessionId=null,currentAdminSessionTab="games",currentAdminGameId=null;
+let currentScope=latestMonth(),currentSessionDetailTab="overview",currentSessionId=null,currentPlayer="",currentPlayerMonth=latestMonth(),currentPlayerMode="month",currentPlayerDetailTab="overview",editingRecordKey=null,currentAdminTab="sessions",currentAdminSessionId=null,currentAdminSessionTab="games",currentAdminGameId=null,currentAdminPlayerFilter="active";
 
 /* ===== Authentification et données Supabase ===== */
 
@@ -2321,7 +2321,17 @@ function renderAdminPlayers(){
  const list=document.getElementById("admin-players-list");
  const status=document.getElementById("admin-player-status");
  if(!list)return;
- const players=sortedPlayers();
+ const allPlayers=sortedPlayers();
+ const activeCount=allPlayers.filter(p=>p.active!==false).length;
+ const inactiveCount=allPlayers.length-activeCount;
+ const tabs=document.querySelectorAll("#admin-player-tabs [data-admin-player-filter]");
+ tabs.forEach(btn=>{
+   const filter=btn.dataset.adminPlayerFilter;
+   btn.classList.toggle("active",filter===currentAdminPlayerFilter);
+   btn.setAttribute("aria-selected",filter===currentAdminPlayerFilter?"true":"false");
+   btn.textContent=(filter==="inactive"?"Inactifs":"Actifs")+" ("+(filter==="inactive"?inactiveCount:activeCount)+")";
+ });
+ const players=allPlayers.filter(p=>currentAdminPlayerFilter==="inactive"?p.active===false:p.active!==false);
   list.innerHTML=players.map(p=>{
     const used=playerIsUsed(p.name);
     const state=p.active===false?"Inactif":"Actif";
@@ -2343,7 +2353,7 @@ function renderAdminPlayers(){
  list.querySelectorAll(".admin-player-edit").forEach(btn=>btn.addEventListener("click",()=>editAdminPlayer(btn.dataset.name)));
  list.querySelectorAll(".admin-player-toggle").forEach(btn=>btn.addEventListener("click",()=>toggleAdminPlayer(btn.dataset.name)));
  list.querySelectorAll(".admin-player-delete").forEach(btn=>btn.addEventListener("click",()=>deleteAdminPlayer(btn.dataset.name)));
- if(!players.length)list.innerHTML='<p class="muted">Aucun streamer enregistré.</p>';
+ if(!players.length)list.innerHTML='<p class="muted">'+(currentAdminPlayerFilter==="inactive"?"Aucun streamer inactif.":"Aucun streamer actif.")+'</p>';
  if(status&&!status.textContent)status.textContent="";
 }
 function editAdminPlayer(name){
@@ -2526,6 +2536,10 @@ document.getElementById("admin-session-edit-btn").addEventListener("click",editS
 document.getElementById("admin-session-delete-btn").addEventListener("click",deleteSelectedAdminSession);
 document.getElementById("admin-new-game-btn").addEventListener("click",openAdminNewGame);
 document.getElementById("admin-delete-game-btn").addEventListener("click",()=>{if(currentAdminGameId)deleteCrewtestGame(currentAdminGameId)});
+document.querySelectorAll("#admin-player-tabs [data-admin-player-filter]").forEach(btn=>btn.addEventListener("click",()=>{
+  currentAdminPlayerFilter=btn.dataset.adminPlayerFilter==="inactive"?"inactive":"active";
+  renderAdminPlayers();
+}));
 document.querySelectorAll("#admin-main-tabs [data-admin-tab]").forEach(btn=>btn.addEventListener("click",()=>{
   currentAdminTab=btn.dataset.adminTab;
   syncAdminMainTabs();
