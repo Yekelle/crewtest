@@ -174,8 +174,9 @@ footer{position:relative;z-index:1;text-align:center;color:#6f889a;font-size:12p
 .visual-shame .vrow > div{position:static;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:10px;min-width:0;height:100%;padding-left:1.5%;padding-right:3.2%;transform:none}
 .visual-shame .vlabel{color:#fff;font-size:clamp(10.5px,.82vw,15px);line-height:1.04;font-weight:900;white-space:nowrap;transform:translateX(14px)}
 .visual-shame small{display:block;position:static;color:#e2cdd2;font-size:clamp(7.2px,.52vw,9.5px);line-height:1;margin:0;white-space:nowrap;text-align:right;transform:translateX(-14px)}
-.visual-shame .vrow:first-child .vlabel{font-size:clamp(9px,.72vw,13px)}
-.visual-shame .vrow:first-child small{font-size:clamp(6.5px,.46vw,8.5px)}
+.visual-shame .vrow:first-child > div{grid-template-columns:auto minmax(0,1fr);column-gap:4px;padding-left:1.5%;padding-right:1.5%}
+.visual-shame .vrow:first-child .vlabel{font-size:clamp(8.6px,.68vw,12.4px);transform:none}
+.visual-shame .vrow:first-child small{font-size:clamp(6px,.42vw,7.8px);transform:none;text-align:right;justify-self:end}
 .visual-shame .vrow > strong{position:static;width:100%;height:100%;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 2%;color:#fff;font-size:clamp(10.5px,.82vw,15px);line-height:1.05;font-weight:900;overflow-wrap:anywhere;transform:translateX(-18px)}
 @media(max-width:900px){
   .visual-hall .vrow > div,.visual-shame .vrow > div{grid-template-columns:1fr;row-gap:2px}
