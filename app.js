@@ -1414,20 +1414,20 @@ function renderStats(){
  if(!tracked.length){document.getElementById("hall").innerHTML="";document.getElementById("shame").innerHTML="";document.getElementById("t1-rows").innerHTML="";document.getElementById("mentions").innerHTML="";document.getElementById("t1-average").textContent="0 Crewmate";return}
  const impP=tracked.filter(x=>x.imp.length),crewP=tracked.filter(x=>x.crew.length),taskEligible=tracked.filter(x=>x.taskGames>=3&&x.taskRate!==null);
  const bestTaskRate=taskEligible.length?Math.max(...taskEligible.map(x=>x.taskRate)):null,worstTaskRate=taskEligible.length?Math.min(...taskEligible.map(x=>x.taskRate)):null,bestTasks=taskEligible.filter(x=>x.taskRate===bestTaskRate),worstTasks=taskEligible.filter(x=>x.taskRate===worstTaskRate);
- const maxIR=impP.length?Math.max(...impP.map(x=>x.impWins/x.imp.length)):0,iaot=impP.length?impP.filter(x=>x.impWins/x.imp.length===maxIR):[],mostIW=impP.length?[...impP].sort((a,b)=>b.impWins-a.impWins)[0]:null;
- const maxCR=crewP.length?Math.max(...crewP.map(x=>x.crewWins/x.crew.length)):0,bestC=crewP.length?crewP.filter(x=>x.crewWins/x.crew.length===maxCR):[],mostIG=[...tracked].sort((a,b)=>b.imp.length-a.imp.length)[0];
- const maxCS=Math.max(...tracked.map(x=>x.crew.length/x.rr.length)),career=tracked.filter(x=>x.crew.length/x.rr.length===maxCS),never=impP.filter(x=>x.impEjected===0);
+ const maxIR=impP.length?Math.max(...impP.map(x=>x.impWins/x.imp.length)):0,iaot=maxIR>0?impP.filter(x=>x.impWins/x.imp.length===maxIR):[],mostIW=impP.length?[...impP].sort((a,b)=>b.impWins-a.impWins)[0]:null;
+ const maxCR=crewP.length?Math.max(...crewP.map(x=>x.crewWins/x.crew.length)):0,bestC=maxCR>0?crewP.filter(x=>x.crewWins/x.crew.length===maxCR):[],mostIG=[...tracked].sort((a,b)=>b.imp.length-a.imp.length)[0];
+ const maxCS=Math.max(...tracked.map(x=>x.crew.length/x.rr.length)),career=tracked.filter(x=>x.crew.length/x.rr.length===maxCS),never=impP.filter(x=>x.impEjected===0),boss=mostIW&&mostIW.impWins>0?mostIW:null;
  document.getElementById("hall").innerHTML=[
- vrow(all?"IAOT — Impo of all time":"Imposteur du mois",iaot.length?iaot.map(x=>x.name).join(", "):"Pas de données",iaot.length?`${pct(maxIR,1)} de victoires Imposteur`:"Aucun Imposteur enregistré","crown"),
- vrow("Boss final",mostIW?mostIW.name:"Pas de données",mostIW?`${mostIW.impWins} victoire${mostIW.impWins>1?"s":""} en Imposteur`:"Aucune victoire Imposteur","star"),
- vrow("Valeur sûre du Crew",bestC.length?bestC.map(x=>x.name).join(", "):"Pas de données",bestC.length?`${pct(maxCR,1)} de victoires Crew`:"Aucun Crew enregistré","medal"),
+ vrow(all?"IAOT — Impo of all time":"Imposteur du mois",iaot.length?iaot.map(x=>x.name).join(", "):"Personne",iaot.length?`${pct(maxIR,1)} de victoires Imposteur`:"Aucune victoire Imposteur","crown"),
+ vrow("Boss final",boss?boss.name:"Personne",boss?`${boss.impWins} victoire${boss.impWins>1?"s":""} en Imposteur`:"Aucune victoire Imposteur","star"),
+ vrow("Valeur sûre du Crew",bestC.length?bestC.map(x=>x.name).join(", "):"Personne",bestC.length?`${pct(maxCR,1)} de victoires Crew`:"Aucune victoire Crew","medal"),
  vrow("Abonné au côté obscur",mostIG.name,`${pct(mostIG.imp.length,mostIG.rr.length)} en Imposteur`,"users"),
  vrow("Le Crewmate de carrière",career.map(x=>x.name).join(", "),`${pct(maxCS,1)} Crew`,"shield"),
- vrow("Sous les radars",never.map(x=>x.name).join(", "),"0 éjection en Imposteur","infinity"),
+ vrow("Sous les radars",never.length?never.map(x=>x.name).join(", "):"Personne",never.length?"0 éjection en Imposteur":"Aucun Imposteur non éjecté","infinity"),
  vrow("Employé du mois",bestTasks.length?bestTasks.map(x=>x.name).join(", "):"Pas assez de données",bestTasks.length?bestTasks.map(x=>`${x.taskDone} quêtes`).join(" • "):"Minimum 3 games Crew","bolt")
  ].join("");
 
- const zero=impP.filter(x=>x.impWins===0),maxE=impP.length?Math.max(...impP.map(x=>x.impEjected)):0,sas=impP.length?impP.filter(x=>x.impEjected===maxE):[],maxER=impP.length?Math.max(...impP.map(x=>x.impEjected/x.imp.length)):0,mostE=impP.length?impP.filter(x=>x.impEjected/x.imp.length===maxER):[];
+ const zero=impP.filter(x=>x.impWins===0),maxE=impP.length?Math.max(...impP.map(x=>x.impEjected)):0,sas=maxE>0?impP.filter(x=>x.impEjected===maxE):[],maxER=impP.length?Math.max(...impP.map(x=>x.impEjected/x.imp.length)):0,mostE=maxER>0?impP.filter(x=>x.impEjected/x.imp.length===maxER):[];
  const maxT1=Math.max(...tracked.map(x=>x.t1)),ghost=tracked.filter(x=>x.t1===maxT1),maxFR=crewP.length?Math.max(...crewP.map(x=>x.firstDeath/x.crew.length)):0,express=crewP.length?crewP.filter(x=>x.firstDeath/x.crew.length===maxFR):[],maxCE=Math.max(...tracked.map(x=>x.crewEjected)),sus=tracked.filter(x=>x.crewEjected===maxCE&&maxCE>0),noCW=crewP.filter(x=>x.crewWins===0);
  document.getElementById("shame").innerHTML=[
  vrow("Impo en période d’essai",zero.length?zero.map(x=>x.name).join(", "):"Personne",zero.length?zero.map(x=>`${x.impWins} victoire${x.impWins>1?"s":""} sur ${x.imp.length} game${x.imp.length>1?"s":""} Imposteur`).join(" • "):"Aucun joueur concerné","cone"),
@@ -1435,7 +1435,7 @@ function renderStats(){
  vrow("VIP du SAS",mostE.length?mostE.map(x=>x.name).join(", "):"Personne",mostE.length?`${pct(maxER,1)} d’éjection en tant qu’Imposteur`:"Aucun joueur concerné","x"),
  vrow("Fantôme ultime",ghost.map(x=>x.name).join(", "),`Mort en T1 ${maxT1} fois`,"ghost"),
  vrow("Le départ express",express.length?express.map(x=>x.name).join(", "):"Personne",express.length?`Mort en premier ${express[0].firstDeath} fois • ${pct(maxFR,1)}`:"Aucun joueur concerné","fast"),
- vrow("Accusé idéal",sus.length?sus.map(x=>x.name).join(", "):"Personne",sus.length?`${maxCE} éjection(s) en Crew`:"","megaphone"),
+ vrow("Accusé idéal",sus.length?sus.map(x=>x.name).join(", "):"Personne",sus.length?`${maxCE} éjection(s) en Crew`:"Aucune éjection en Crew","megaphone"),
  vrow("Soirée noire",noCW.length?noCW.map(x=>x.name).join(", "):"Personne",noCW.length?"0 victoire Crew":"Aucun joueur concerné","sad"),
  vrow("Éternel vacancier",worstTasks.length?worstTasks.map(x=>x.name).join(", "):"Pas assez de données",worstTasks.length?worstTasks.map(x=>`${x.taskDone} quêtes`).join(" • "):"Minimum 3 games Crew","sad")
  ].join("");
@@ -1450,15 +1450,15 @@ function renderStats(){
  t1row("Aucun décès T1",noT1.length?noT1.map(x=>x.name).join(", "):"Personne",noT1.length?noT1.map(x=>`0/${x.crew.length}`).join(" • "):"")
  ].join("");
 
- const topKG=Math.max(...tracked.map(x=>x.maxKills)),topK=tracked.filter(x=>x.maxKills===topKG),bestRepair=Math.max(...tracked.map(x=>x.repairs)),repairers=tracked.filter(x=>x.repairs===bestRepair),favSab=favoriteSabotage(recs.filter(r=>r.role==="Imposteur"));
+ const topKG=Math.max(...tracked.map(x=>x.maxKills)),topK=tracked.filter(x=>x.maxKills===topKG),bestRepair=Math.max(...tracked.map(x=>x.repairs)),repairers=bestRepair>0?tracked.filter(x=>x.repairs===bestRepair):[],favSab=favoriteSabotage(recs.filter(r=>r.role==="Imposteur"));
  const mapStats={};games.forEach(g=>{mapStats[g.map]??={total:0,imp:0,crew:0};mapStats[g.map].total++;g.winner==="Imposteurs"?mapStats[g.map].imp++:mapStats[g.map].crew++});
- const bestIM=Object.values(mapStats).length?Math.max(...Object.values(mapStats).map(x=>x.imp/x.total)):0,impMaps=Object.entries(mapStats).length?Object.entries(mapStats).filter(([,x])=>x.imp/x.total===bestIM):[],bestCM=Object.values(mapStats).length?Math.max(...Object.values(mapStats).map(x=>x.crew/x.total)):0,crewMaps=Object.entries(mapStats).length?Object.entries(mapStats).filter(([,x])=>x.crew/x.total===bestCM):[];
+ const bestIM=Object.values(mapStats).length?Math.max(...Object.values(mapStats).map(x=>x.imp/x.total)):0,impMaps=bestIM>0?Object.entries(mapStats).filter(([,x])=>x.imp/x.total===bestIM):[],bestCM=Object.values(mapStats).length?Math.max(...Object.values(mapStats).map(x=>x.crew/x.total)):0,crewMaps=bestCM>0?Object.entries(mapStats).filter(([,x])=>x.crew/x.total===bestCM):[];
  document.getElementById("mentions").innerHTML=[
  mentionRow("Serial Killer",topK.map(x=>x.name).join(", "),`${topKG} kills en une game`),
- mentionRow("SOS Dépannage",repairers.map(x=>x.name).join(", "),`${bestRepair} réparations au total`),
+ mentionRow("SOS Dépannage",repairers.length?repairers.map(x=>x.name).join(", "):"Personne",repairers.length?`${bestRepair} réparations au total`:"Aucune réparation"),
  mentionRow("Sabotage préféré des Imposteurs",favSab?favSab.name:"Non renseigné",favSab?`${favSab.count} utilisations détaillées`:""),
- mentionRow("Map préférée des Imposteurs",impMaps.length?impMaps.map(([m])=>m).join(" & "):"Pas de données",impMaps.length?`${pct(bestIM,1)} de victoires`:"Aucune game"),
- mentionRow("Map la plus favorable au Crew",crewMaps.length?crewMaps.map(([m])=>m).join(" & "):"Pas de données",crewMaps.length?`${pct(bestCM,1)} de victoires`:"Aucune game")
+ mentionRow("Map préférée des Imposteurs",impMaps.length?impMaps.map(([m])=>m).join(" & "):"Aucune",impMaps.length?`${pct(bestIM,1)} de victoires`:"Aucune victoire Imposteur"),
+ mentionRow("Map la plus favorable au Crew",crewMaps.length?crewMaps.map(([m])=>m).join(" & "):"Aucune",crewMaps.length?`${pct(bestCM,1)} de victoires`:"Aucune victoire Crew")
  ].join("");
 }
 
