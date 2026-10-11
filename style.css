@@ -221,14 +221,6 @@ footer{position:relative;z-index:1;text-align:center;color:#6f889a;font-size:12p
 
 
 /* ===== Admin : participants par soirée ===== */
-.admin-participants-panel{
-  margin-bottom:18px;
-}
-.admin-session-select{
-  display:block;
-  max-width:280px;
-  margin:14px 0;
-}
 .participant-grid{
   display:grid;
   grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
@@ -280,17 +272,6 @@ footer{position:relative;z-index:1;text-align:center;color:#6f889a;font-size:12p
 }
 
 /* ===== Admin : création de session ===== */
-.admin-session-create{
-  margin-bottom:18px;
-}
-.admin-session-date{
-  display:block;
-  max-width:280px;
-  margin-top:14px;
-}
-.admin-session-date input{
-  width:100%;
-}
 
 
 /* ===== Fiche joueur : identité / avatar / lien Twitch ===== */
@@ -492,37 +473,6 @@ footer{position:relative;z-index:1;text-align:center;color:#6f889a;font-size:12p
   display:grid;
   gap:10px;
   margin-top:14px;
-}
-.admin-session-row{
-  display:grid;
-  grid-template-columns:minmax(220px,1fr) minmax(180px,240px) auto;
-  gap:12px;
-  align-items:end;
-  padding:12px;
-  border:1px solid #173f59;
-  border-radius:11px;
-  background:#071521;
-}
-.admin-session-main strong{
-  display:block;
-}
-.admin-session-main small{
-  display:block;
-  color:var(--muted);
-  margin-top:4px;
-}
-.admin-session-actions{
-  display:flex;
-  gap:8px;
-}
-@media(max-width:800px){
-  .admin-session-row{
-    grid-template-columns:1fr;
-    align-items:stretch;
-  }
-  .admin-session-actions{
-    justify-content:flex-start;
-  }
 }
 
 

@@ -15,7 +15,6 @@ let authRole=null;
 let authLoading=true;
 
 const SABOTAGE_TYPES=["Oxygène","Réacteur","Lumières","Radio","Sismiques","Portes","Champignon"];
-let DELETED_SESSIONS=new Set();
 let SESSIONS={};
 let DEFAULT_SESSION_PARTICIPANTS={};
 let RECORDS=[],GAMES=[],SESSION_PARTICIPANTS={},PLAYERS=[];
@@ -165,26 +164,23 @@ async function handleAccountSetup(event){
 }
 
 function renderAdminAccess(){
-  const panel=document.getElementById("admin-auth-panel"),protectedBox=document.getElementById("admin-protected"),adminOnly=document.getElementById("admin-only-tools");
+  const panel=document.getElementById("admin-auth-panel"),protectedBox=document.getElementById("admin-protected");
   if(!panel||!protectedBox)return;
   if(authLoading){
     panel.innerHTML=`<h3>Accès Gestion</h3><p class="muted">Vérification de la session…</p>`;
     protectedBox.hidden=true;
-    if(adminOnly)adminOnly.hidden=true;
     return;
   }
   if(editorCanWrite()){
     const isAdmin=authRole==="admin";
     panel.innerHTML=`<div class="admin-auth-user"><div><h3>${isAdmin?"Administration":"Accès Helper"} déverrouillé${isAdmin?"":" "}</h3><p class="muted">Connecté avec <strong>${esc(authUser.email||"compte")}</strong> • rôle ${isAdmin?"Admin":"Helper"}${isAdmin?"":" • saisie et modification des fiches"}</p></div><button id="admin-logout-btn" class="secondary" type="button">Se déconnecter</button></div>`;
     protectedBox.hidden=false;
-    if(adminOnly)adminOnly.hidden=!isAdmin;
     document.getElementById("admin-logout-btn")?.addEventListener("click",handleAdminLogout);
     return;
   }
   const message=authUser?"Ce compte n’a pas accès à la gestion.":"La consultation du site reste publique. Une connexion Admin ou Helper est nécessaire uniquement pour modifier les données.";
   panel.innerHTML=`<h3>Accès Gestion</h3><p class="muted">${message}</p><form id="admin-login-form" class="admin-auth-form"><label>E-mail<input id="admin-login-email" type="email" autocomplete="username" required></label><label>Mot de passe<input id="admin-login-password" type="password" autocomplete="current-password" required></label><div class="admin-auth-actions"><button class="primary" type="submit">Se connecter</button><button id="admin-password-link" class="secondary" type="button">Définir / réinitialiser le mot de passe</button></div></form><span id="admin-auth-status" class="muted admin-auth-status"></span>`;
   protectedBox.hidden=true;
-  if(adminOnly)adminOnly.hidden=true;
   document.getElementById("admin-login-form")?.addEventListener("submit",e=>{e.preventDefault();handleAdminLogin()});
   document.getElementById("admin-password-link")?.addEventListener("click",handlePasswordLink);
 }
@@ -300,12 +296,6 @@ async function loadFromSupabase(){
   const participantRows=participantsQ.data||[];
   const recordRows=recordsQ.data||[];
 
-  if(!playerRows.length || !sessionRows.length || !gameRows.length || !recordRows.length){
-    throw new Error(
-      `Supabase a répondu avec des données incomplètes (joueurs: ${playerRows.length}, sessions: ${sessionRows.length}, games: ${gameRows.length}, fiches: ${recordRows.length}). Conservation de la sauvegarde locale.`
-    );
-  }
-
   const playerById=new Map(playerRows.map(p=>[p.id,p.name]));
   const gameById=new Map(gameRows.map(g=>[g.id,g]));
 
@@ -373,7 +363,6 @@ async function loadFromSupabase(){
     };
   });
 
-  DELETED_SESSIONS=new Set();
   console.info("Crew'mong Us : données chargées depuis Supabase.");
 }
 /* ===== Helpers de sessions et joueurs ===== */
@@ -2188,7 +2177,7 @@ async function addAdminSession(){
   if(!requireAdmin())return;
   const input=document.getElementById("admin-new-session-date"),status=document.getElementById("admin-session-status"),id=input.value;
   if(!id){status.textContent="Choisis une date.";return}
-  if(SESSIONS[id]&&!DELETED_SESSIONS.has(id)){status.textContent="Cette session existe déjà.";return}
+  if(SESSIONS[id]){status.textContent="Cette session existe déjà.";return}
   const meta=sessionMetaFromId(id);
 
   if(TEST_MODE){
@@ -2554,14 +2543,14 @@ document.getElementById("admin-reset").addEventListener("click",async()=>{
   if(TEST_MODE){
     crewtestLoadState();
     crewtestRefreshAll();
-    const status=document.getElementById("admin-manage-session-status");
-    if(status&&!status.closest("#admin-only-tools")?.hidden)status.textContent="Données locales CREWTEST rechargées.";
+    const status=document.getElementById("admin-session-status");
+    if(status)status.textContent="Données locales CREWTEST rechargées.";
     return;
   }
   try{
     await reloadPublicData();
-    const status=document.getElementById("admin-manage-session-status");
-    if(status&&!status.closest("#admin-only-tools")?.hidden)status.textContent="Données rechargées depuis Supabase.";
+    const status=document.getElementById("admin-session-status");
+    if(status)status.textContent="Données rechargées depuis Supabase.";
   }catch(error){alert("Erreur Supabase : "+error.message)}
 });
 /* ===== Initialisation et rendu global ===== */
