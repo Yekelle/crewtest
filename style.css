@@ -263,6 +263,8 @@ footer{position:relative;z-index:1;text-align:center;color:#6f889a;font-size:12p
 .admin-player-row.inactive{opacity:.72}
 .admin-player-row.inactive strong{opacity:.8}
 #admin-player-status{display:block;margin-top:6px}
+.admin-player-tabs{margin:14px 0 12px;padding-top:12px;border-top:1px solid rgba(149,191,216,.12)}
+.admin-player-tabs .tab{width:auto}
 .participant-check.inactive{opacity:.55}
 @media(max-width:800px){
   .admin-player-form{grid-template-columns:1fr;align-items:stretch}
