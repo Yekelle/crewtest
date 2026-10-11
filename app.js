@@ -1430,7 +1430,7 @@ function renderStats(){
  const zero=impP.filter(x=>x.impWins===0),maxE=impP.length?Math.max(...impP.map(x=>x.impEjected)):0,sas=maxE>0?impP.filter(x=>x.impEjected===maxE):[],maxER=impP.length?Math.max(...impP.map(x=>x.impEjected/x.imp.length)):0,mostE=maxER>0?impP.filter(x=>x.impEjected/x.imp.length===maxER):[];
  const maxT1=Math.max(...tracked.map(x=>x.t1)),ghost=tracked.filter(x=>x.t1===maxT1),maxFR=crewP.length?Math.max(...crewP.map(x=>x.firstDeath/x.crew.length)):0,express=crewP.length?crewP.filter(x=>x.firstDeath/x.crew.length===maxFR):[],maxCE=Math.max(...tracked.map(x=>x.crewEjected)),sus=tracked.filter(x=>x.crewEjected===maxCE&&maxCE>0),noCW=crewP.filter(x=>x.crewWins===0);
  document.getElementById("shame").innerHTML=[
- vrow("Impo en période d’essai",zero.length?zero.map(x=>x.name).join(", "):"Personne",zero.length?(new Set(zero.map(x=>x.imp.length)).size===1?"0 victoire sur "+zero[0].imp.length+" game"+(zero[0].imp.length>1?"s":"")+" Imposteur":"0 victoire en Imposteur"):"Aucun joueur concerné","cone"),
+ vrow("Impo en période d’essai",zero.length?zero.map(x=>x.name).join(", "):"Personne",zero.length?(new Set(zero.map(x=>x.imp.length)).size===1?"0 victoire sur "+zero[0].imp.length+" game"+(zero[0].imp.length>1?"s":""):"0 victoire en Imposteur"):"Aucun joueur concerné","cone"),
  vrow("Abonné au SAS",sas.length?sas.map(x=>x.name).join(", "):"Personne",sas.length?`${maxE} éjection${maxE>1?"s":""} en Imposteur`:"Aucun joueur concerné","eject"),
  vrow("VIP du SAS",mostE.length?mostE.map(x=>x.name).join(", "):"Personne",mostE.length?`${pct(maxER,1)} d’éjection en tant qu’Imposteur`:"Aucun joueur concerné","x"),
  vrow("Fantôme ultime",ghost.map(x=>x.name).join(", "),`Mort en T1 ${maxT1} fois`,"ghost"),
