@@ -1744,6 +1744,18 @@ function renderPlayer(){
  sabCount=rr.reduce((a,r)=>a+Number(r.sab||0),0),
  fav=favoriteSabotage(imp);
 
+ const victimCounts=new Map();
+ imp.forEach(r=>(r.kills||[]).forEach(name=>{
+  const victim=String(name||"").trim();
+  if(victim)victimCounts.set(victim,(victimCounts.get(victim)||0)+1);
+ }));
+ const favoriteVictimCount=victimCounts.size?Math.max(...victimCounts.values()):0,
+ favoriteVictims=favoriteVictimCount?[...victimCounts.entries()].filter(([,n])=>n===favoriteVictimCount).map(([name])=>name).sort((a,b)=>a.localeCompare(b,"fr")):[],
+ favoriteVictimLabel=favoriteVictims.length>1?"Victimes préférées":"Victime préférée",
+ favoriteVictimText=favoriteVictimCount
+  ?favoriteVictims.join(", ")+" · "+favoriteVictimCount+" kill"+(favoriteVictimCount>1?"s":"")+(favoriteVictims.length>1?" chacun":"")
+  :"—";
+
  document.getElementById("p-summary").innerHTML=[
   ["Games",rr.length],["Victoires",wins],["Kills",kills],["Reports",totalReports],["Réparations",repairs]
  ].map(([a,b])=>`<div class="card"><span>${a}</span><strong>${b}</strong></div>`).join("");
@@ -1786,6 +1798,7 @@ function renderPlayer(){
   ["Winrate Imposteur",pct(imp.filter(r=>resultFor(r)==="Victoire").length,imp.length)],
   ["Kills",kills],
   ["Kills / game Imposteur",imp.length?(kills/imp.length).toFixed(2).replace(".",","):"—"],
+  [favoriteVictimLabel,favoriteVictimText],
   ["Éjections Imposteur",imp.filter(r=>r.ejected).length],
   ["Sabotages",sabCount],
   ["Sabotages / game Imposteur",imp.length?(sabCount/imp.length).toFixed(2).replace(".",","):"—"]
