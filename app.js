@@ -762,10 +762,18 @@ function crewtestRepairCounts(data){
 function crewtestVoteStats(data){
   const players=Array.isArray(data&&data.Players)?data.Players:[];
   const meetings=Array.isArray(data&&data.Meetings)?data.Meetings:[];
+  const events=Array.isArray(data&&data.Events)?data.Events:[];
   const roleByName=new Map(players.map(function(p){
     return [crewtestResolvePlayerName(p.Name),crewtestRole(p.Role)];
   }));
-  const stats=new Map();
+  const stats=new Map(),killedAt=new Map(),eliminated=new Set();
+
+  events.filter(function(e){return e&&e.Type==="kill"}).forEach(function(e){
+    const victim=crewtestBaseName(e.Target,data),ts=crewtestTs(e.Timestamp);
+    if(!victim||ts===null)return;
+    const previous=killedAt.get(victim);
+    if(previous===undefined||ts<previous)killedAt.set(victim,ts);
+  });
 
   function get(name){
     if(!stats.has(name))stats.set(name,{
@@ -775,10 +783,17 @@ function crewtestVoteStats(data){
     return stats.get(name);
   }
 
-  meetings.forEach(function(m){
+  [...meetings].sort(function(a,b){
+    return (crewtestTs(a&&a.StartedAt)||0)-(crewtestTs(b&&b.StartedAt)||0);
+  }).forEach(function(m){
+    const meetingTs=crewtestTs(m&&m.StartedAt);
+
     (Array.isArray(m&&m.Votes)?m.Votes:[]).forEach(function(v){
       const voter=crewtestBaseName(v.Voter,data);
       if(!voter)return;
+      const killedBefore=meetingTs!==null&&killedAt.has(voter)&&killedAt.get(voter)<meetingTs;
+      if(killedBefore||eliminated.has(voter))return;
+
       const s=get(voter);
       const type=String(v.Type||"").toLowerCase();
       s.cast++;
@@ -801,11 +816,21 @@ function crewtestVoteStats(data){
         else if(targetRole==="Crew")s.crewWrong++;
       }
     });
+
+    const exileText=String(m&&m.ExileResult||"").toLowerCase();
+    if(exileText){
+      players.forEach(function(p){
+        const rawName=String(p&&p.Name||"");
+        if(rawName&&exileText.startsWith(rawName.toLowerCase()+" ")){
+          const name=crewtestBaseName(rawName,data);
+          if(name)eliminated.add(name);
+        }
+      });
+    }
   });
 
   return stats;
 }
-
 function crewtestDeriveGame(data){
   const events=Array.isArray(data&&data.Events)?data.Events:[];
   const meetings=Array.isArray(data&&data.Meetings)?data.Meetings:[];
