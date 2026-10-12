@@ -1403,14 +1403,18 @@ function renderStats(){
  if(!tracked.length){document.getElementById("hall").innerHTML="";document.getElementById("shame").innerHTML="";document.getElementById("t1-rows").innerHTML="";document.getElementById("mentions").innerHTML="";document.getElementById("t1-average").textContent="0 Crewmate";return}
  const impP=tracked.filter(x=>x.imp.length),crewP=tracked.filter(x=>x.crew.length),taskEligible=tracked.filter(x=>x.taskGames>=3&&x.taskRate!==null);
  const bestTaskRate=taskEligible.length?Math.max(...taskEligible.map(x=>x.taskRate)):null,worstTaskRate=taskEligible.length?Math.min(...taskEligible.map(x=>x.taskRate)):null,bestTasks=taskEligible.filter(x=>x.taskRate===bestTaskRate),worstTasks=taskEligible.filter(x=>x.taskRate===worstTaskRate);
- const maxIR=impP.length?Math.max(...impP.map(x=>x.impWins/x.imp.length)):0,iaot=maxIR>0?impP.filter(x=>x.impWins/x.imp.length===maxIR):[],mostIW=impP.length?[...impP].sort((a,b)=>b.impWins-a.impWins)[0]:null;
- const maxCR=crewP.length?Math.max(...crewP.map(x=>x.crewWins/x.crew.length)):0,bestC=maxCR>0?crewP.filter(x=>x.crewWins/x.crew.length===maxCR):[],mostIG=[...tracked].sort((a,b)=>b.imp.length-a.imp.length)[0];
- const maxCS=Math.max(...tracked.map(x=>x.crew.length/x.rr.length)),career=tracked.filter(x=>x.crew.length/x.rr.length===maxCS),never=impP.filter(x=>x.impEjected===0),boss=mostIW&&mostIW.impWins>0?mostIW:null;
+ const maxIR=impP.length?Math.max(...impP.map(x=>x.impWins/x.imp.length)):0,iaot=maxIR>0?impP.filter(x=>x.impWins/x.imp.length===maxIR):[],
+ maxIW=impP.length?Math.max(...impP.map(x=>x.impWins)):0,bosses=maxIW>0?impP.filter(x=>x.impWins===maxIW):[];
+ const maxCR=crewP.length?Math.max(...crewP.map(x=>x.crewWins/x.crew.length)):0,bestC=maxCR>0?crewP.filter(x=>x.crewWins/x.crew.length===maxCR):[],
+ maxIG=impP.length?Math.max(...impP.map(x=>x.imp.length)):0,mostIG=maxIG>0?impP.filter(x=>x.imp.length===maxIG):[],
+ mostIGRates=new Set(mostIG.map(x=>x.imp.length/x.rr.length)),
+ mostIGDetail=mostIG.length?(mostIGRates.size===1?`${pct(mostIG[0].imp.length,mostIG[0].rr.length)} en Imposteur`:`${maxIG} game${maxIG>1?"s":""} en Imposteur`):"Aucune game Imposteur";
+ const maxCS=Math.max(...tracked.map(x=>x.crew.length/x.rr.length)),career=tracked.filter(x=>x.crew.length/x.rr.length===maxCS),never=impP.filter(x=>x.impEjected===0);
  document.getElementById("hall").innerHTML=[
  vrow(all?"IAOT — Impo of all time":"Imposteur du mois",iaot.length?iaot.map(x=>x.name).join(", "):"Personne",iaot.length?`${pct(maxIR,1)} de victoires Imposteur`:"Aucune victoire Imposteur","crown"),
- vrow("Boss final",boss?boss.name:"Personne",boss?`${boss.impWins} victoire${boss.impWins>1?"s":""} en Imposteur`:"Aucune victoire Imposteur","star"),
+ vrow("Boss final",bosses.length?bosses.map(x=>x.name).join(", "):"Personne",bosses.length?`${maxIW} victoire${maxIW>1?"s":""} en Imposteur`:"Aucune victoire Imposteur","star"),
  vrow("Valeur sûre du Crew",bestC.length?bestC.map(x=>x.name).join(", "):"Personne",bestC.length?`${pct(maxCR,1)} de victoires Crew`:"Aucune victoire Crew","medal"),
- vrow("Abonné au côté obscur",mostIG.name,`${pct(mostIG.imp.length,mostIG.rr.length)} en Imposteur`,"users"),
+ vrow("Abonné au côté obscur",mostIG.length?mostIG.map(x=>x.name).join(", "):"Personne",mostIGDetail,"users"),
  vrow("Le Crewmate de carrière",career.map(x=>x.name).join(", "),`${pct(maxCS,1)} Crew`,"shield"),
  vrow("Sous les radars",never.length?never.map(x=>x.name).join(", "):"Personne",never.length?"0 éjection en Imposteur":"Aucun Imposteur non éjecté","infinity"),
  vrow("Employé du mois",bestTasks.length?bestTasks.map(x=>x.name).join(", "):"Pas assez de données",bestTasks.length?bestTasks.map(x=>`${x.taskDone} quêtes`).join(" • "):"Minimum 3 games Crew","bolt")
@@ -1423,7 +1427,7 @@ function renderStats(){
  vrow("Abonné au SAS",sas.length?sas.map(x=>x.name).join(", "):"Personne",sas.length?`${maxE} éjection${maxE>1?"s":""} en Imposteur`:"Aucun joueur concerné","eject"),
  vrow("VIP du SAS",mostE.length?mostE.map(x=>x.name).join(", "):"Personne",mostE.length?`${pct(maxER,1)} d’éjection en tant qu’Imposteur`:"Aucun joueur concerné","x"),
  vrow("Fantôme ultime",ghost.map(x=>x.name).join(", "),`Mort en T1 ${maxT1} fois`,"ghost"),
- vrow("Le départ express",express.length?express.map(x=>x.name).join(", "):"Personne",express.length?`Mort en premier ${express[0].firstDeath} fois • ${pct(maxFR,1)}`:"Aucun joueur concerné","fast"),
+ vrow("Le départ express",express.length?express.map(x=>x.name).join(", "):"Personne",express.length?(new Set(express.map(x=>x.firstDeath)).size===1?`Mort en premier ${express[0].firstDeath} fois • ${pct(maxFR,1)}`:`${pct(maxFR,1)} de premières morts`):"Aucun joueur concerné","fast"),
  vrow("Accusé idéal",sus.length?sus.map(x=>x.name).join(", "):"Personne",sus.length?`${maxCE} éjection(s) en Crew`:"Aucune éjection en Crew","megaphone"),
  vrow("Soirée noire",noCW.length?noCW.map(x=>x.name).join(", "):"Personne",noCW.length?"0 victoire Crew":"Aucun joueur concerné","sad"),
  vrow("Éternel vacancier",worstTasks.length?worstTasks.map(x=>x.name).join(", "):"Pas assez de données",worstTasks.length?worstTasks.map(x=>`${x.taskDone} quêtes`).join(" • "):"Minimum 3 games Crew","sad")
@@ -1434,7 +1438,7 @@ function renderStats(){
  const maxRisk=crewP.length?Math.max(...crewP.map(x=>x.t1/x.crew.length)):0,risk=crewP.length?crewP.filter(x=>x.t1/x.crew.length===maxRisk):[],noT1=crewP.filter(x=>x.t1===0);
  document.getElementById("t1-rows").innerHTML=[
  t1row("Mort le plus souvent",ghost.map(x=>x.name).join(", "),`${maxT1} fois`),
- t1row("Taux de décès T1",risk.length?risk.map(x=>x.name).join(", "):"Pas de données",risk.length?`${pct(maxRisk,1)} de mort T1 • ${risk[0].t1}/${risk[0].crew.length} games Crew`:"Aucune game Crew"),
+ t1row("Taux de décès T1",risk.length?risk.map(x=>x.name).join(", "):"Pas de données",risk.length?(new Set(risk.map(x=>x.t1+"/"+x.crew.length)).size===1?`${pct(maxRisk,1)} de mort T1 • ${risk[0].t1}/${risk[0].crew.length} games Crew`:`${pct(maxRisk,1)} de mort T1`):"Aucune game Crew"),
  t1row("Maximum de kills",`${maxDeaths} morts`,`Record atteint ${maxTimes} fois`),
  t1row("Aucun décès T1",noT1.length?noT1.map(x=>x.name).join(", "):"Personne",noT1.length?noT1.map(x=>`0/${x.crew.length}`).join(" • "):"")
  ].join("");
@@ -1617,7 +1621,7 @@ function renderSession(id){
  document.getElementById("session-games").innerHTML=games.map(g=>`<tr><td>${g.n}</td><td>${esc(g.map)}</td><td>${esc(g.winner)}</td><td>${esc(g.method)}</td><td>${g.t1Deaths||0}</td></tr>`).join("");
  syncSessionDetailTabs();
 }
-function mostCommon(arr){const c={};arr.forEach(v=>c[v]=(c[v]||0)+1);return Object.entries(c).sort((a,b)=>b[1]-a[1])[0]?.[0]}
+function mostCommon(arr){const c={};(arr||[]).filter(Boolean).forEach(v=>c[v]=(c[v]||0)+1);const vals=Object.values(c),max=vals.length?Math.max(...vals):0;return max?Object.entries(c).filter(([,n])=>n===max).map(([v])=>v).join(" / "):undefined}
 
 /* ===== Fiche joueur ===== */
 function setMainPlayerAvatar(player){
