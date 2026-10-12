@@ -146,7 +146,7 @@ footer{position:relative;z-index:1;text-align:center;color:#6f889a;font-size:12p
 .visual-hall,.visual-shame{aspect-ratio:4/3}
 .visual-hall>img,.visual-shame>img{width:100%;height:100%;object-fit:fill}
 .hall-rows{position:absolute;inset:0;display:block;z-index:3}
-.hall-rows .vrow{position:absolute;left:10.2%;right:4.2%;height:7.7%;display:grid;grid-template-columns:minmax(0,1fr) 43%;align-items:center;column-gap:1.2%;padding:0;text-shadow:0 2px 5px #000;transform:none}
+.hall-rows .vrow{position:absolute;left:10.2%;right:4.2%;height:7.7%;display:block;padding:0;text-shadow:0 2px 5px #000;transform:none}
 .hall-rows .vrow:nth-child(1){top:27%}
 .hall-rows .vrow:nth-child(2){top:36.2%}
 .hall-rows .vrow:nth-child(3){top:45.4%}
@@ -155,13 +155,13 @@ footer{position:relative;z-index:1;text-align:center;color:#6f889a;font-size:12p
 .hall-rows .vrow:nth-child(6){top:72.2%}
 .hall-rows .vrow:nth-child(7){top:81.1%}
 .visual-hall .vrow .ico{display:none}
-.visual-hall .vrow > div{position:static;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:10px;min-width:0;height:100%;padding-left:2.5%;padding-right:0;transform:none}
+.visual-hall .vrow > div{position:absolute;left:0;right:44.2%;top:0;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:10px;min-width:0;height:100%;padding-left:2.5%;padding-right:0;transform:none}
 .visual-hall .vlabel{color:#fff;font-size:clamp(11px,.86vw,16px);line-height:1.04;font-weight:900;white-space:nowrap;transform:translateY(-2px)}
 .visual-hall small{display:block;position:static;color:#d2dbe6;font-size:clamp(7.5px,.54vw,10px);line-height:1;margin:0;white-space:nowrap;text-align:right;justify-self:end}
-.visual-hall .vrow > strong{position:static;width:90%;height:100%;display:flex;align-items:center;justify-content:center;justify-self:center;text-align:center;padding:0;color:#fff;font-size:clamp(11px,.86vw,16px);line-height:1.08;font-weight:900;overflow-wrap:anywhere;white-space:normal;transform:translate(10px,-2px)}
+.visual-hall .vrow > strong{position:absolute;right:0;top:0;width:43%;height:100%;display:flex;align-items:center;justify-content:center;text-align:center;padding:0;color:#fff;font-size:clamp(11px,.86vw,16px);line-height:1.08;font-weight:900;overflow-wrap:anywhere;white-space:normal;transform:translate(10px,-2px)}
 
 .shame-rows{position:absolute;inset:0;display:block;z-index:3}
-.shame-rows .vrow{position:absolute;left:15.25%;right:6.70%;height:7.25%;display:grid;grid-template-columns:minmax(0,1fr) 34.5%;align-items:center;column-gap:2.2%;padding:0;text-shadow:0 2px 5px #000;transform:none}
+.shame-rows .vrow{position:absolute;left:15.25%;right:6.70%;height:7.25%;display:block;padding:0;text-shadow:0 2px 5px #000;transform:none}
 .shame-rows .vrow:nth-child(1){top:17.1%}
 .shame-rows .vrow:nth-child(2){top:26.3%}
 .shame-rows .vrow:nth-child(3){top:35.5%}
@@ -171,20 +171,22 @@ footer{position:relative;z-index:1;text-align:center;color:#6f889a;font-size:12p
 .shame-rows .vrow:nth-child(7){top:72.9%}
 .shame-rows .vrow:nth-child(8){top:82.3%}
 .visual-shame .vrow .ico{display:none}
-.visual-shame .vrow > div{position:static;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:10px;min-width:0;height:100%;padding-left:1.5%;padding-right:3.2%;transform:none}
+.visual-shame .vrow > div{position:absolute;left:0;right:36.7%;top:0;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:10px;min-width:0;height:100%;padding-left:1.5%;padding-right:3.2%;transform:none}
 .visual-shame .vlabel{color:#fff;font-size:clamp(10.5px,.82vw,15px);line-height:1.04;font-weight:900;white-space:nowrap;transform:translateX(14px)}
 .visual-shame small{display:block;position:static;color:#e2cdd2;font-size:clamp(7.2px,.52vw,9.5px);line-height:1;margin:0;white-space:nowrap;text-align:right;transform:translateX(-14px)}
 .visual-shame .vrow:first-child > div{grid-template-columns:auto minmax(0,1fr);column-gap:4px;padding-left:1.5%;padding-right:2.5%;overflow:hidden}
 .visual-shame .vrow:first-child .vlabel{font-size:clamp(8.6px,.68vw,12.4px);transform:translateX(15px)}
 .visual-shame .vrow:first-child small{font-size:clamp(6px,.42vw,7.8px);transform:translateX(-20px);text-align:right;justify-self:end}
-.visual-shame .vrow > strong{position:static;width:100%;height:100%;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 2%;color:#fff;font-size:clamp(10.5px,.82vw,15px);line-height:1.05;font-weight:900;overflow-wrap:anywhere;transform:translateX(-18px)}
+.visual-shame .vrow > strong{position:absolute;right:0;top:0;width:34.5%;height:100%;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 2%;color:#fff;font-size:clamp(10.5px,.82vw,15px);line-height:1.05;font-weight:900;overflow-wrap:anywhere;transform:translateX(-18px)}
 @media(max-width:900px){
   .visual-hall .vrow > div,.visual-shame .vrow > div{grid-template-columns:1fr;row-gap:2px}
   .visual-hall small,.visual-shame small{text-align:left}
 }
 @media(max-width:700px){
-  .hall-rows .vrow{left:10.2%;right:4.2%;grid-template-columns:minmax(0,1fr) 48%}
-  .shame-rows .vrow{left:15.25%;right:6.70%;grid-template-columns:minmax(0,1fr) 34.5%}
+  .hall-rows .vrow{left:10.2%;right:4.2%}
+  .visual-hall .vrow > div{right:49.2%}
+  .visual-hall .vrow > strong{width:48%}
+  .shame-rows .vrow{left:15.25%;right:6.70%}
   .visual-hall .vlabel,.visual-hall .vrow > strong,.visual-shame .vlabel,.visual-shame .vrow > strong{font-size:8px}
   .visual-hall small,.visual-shame small{display:none}
 }
