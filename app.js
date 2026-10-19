@@ -1523,6 +1523,11 @@ function renderStats(){
  scheduleFrontStatFit();
 }
 
+function sessionMonthLabel(month){
+ const select=document.getElementById("session-month"),
+ option=select?[...select.options].find(o=>o.value===month):null;
+ return option?.textContent?.trim()||month;
+}
 function renderSessions(){
  const month=document.getElementById("session-month").value,
  cards=document.getElementById("session-cards"),
@@ -1540,12 +1545,22 @@ function renderSessions(){
   return;
  }
 
- if(!entries.some(([id])=>id===currentSessionId))currentSessionId=entries[0][0];
- cards.innerHTML=entries.map(([id,s])=>`<button class="session-card ${id===currentSessionId?"active":""}" data-id="${id}"><h3>${esc(s.date)}</h3><p>${GAMES.filter(g=>g.session===id).length} games enregistrées</p></button>`).join("");
+ const monthId="month:"+month,
+ monthLabel=sessionMonthLabel(month),
+ monthlyGames=GAMES.filter(g=>SESSIONS[g.session]?.month===month),
+ monthlyPlayers=[...new Set(RECORDS.filter(r=>SESSIONS[r.session]?.month===month).map(r=>r.p))],
+ validIds=new Set([monthId,...entries.map(([id])=>id)]);
+
+ if(!validIds.has(currentSessionId))currentSessionId=monthId;
+
+ cards.innerHTML=
+  `<button class="session-card session-card-month ${currentSessionId===monthId?"active":""}" data-id="${esc(monthId)}"><h3>Cumul ${esc(monthLabel)}</h3><p>${monthlyGames.length} games · ${monthlyPlayers.length} joueurs</p></button>`+
+  entries.map(([id,s])=>`<button class="session-card ${id===currentSessionId?"active":""}" data-id="${id}"><h3>${esc(s.date)}</h3><p>${GAMES.filter(g=>g.session===id).length} games enregistrées</p></button>`).join("");
+
  cards.querySelectorAll(".session-card").forEach(b=>b.addEventListener("click",()=>{
    currentSessionId=b.dataset.id;
    cards.querySelectorAll(".session-card").forEach(x=>x.classList.toggle("active",x===b));
-   renderSession(currentSessionId)
+   renderSession(currentSessionId);
  }));
  renderSession(currentSessionId);
 }
@@ -1563,14 +1578,21 @@ function syncSessionDetailTabs(){
  });
 }
 function renderSession(id){
- const s=SESSIONS[id];
- if(!s)return;
- const games=GAMES.filter(g=>g.session===id).sort((a,b)=>a.n-b.n),
- recs=RECORDS.filter(r=>r.session===id),
+ const isMonthScope=String(id||"").startsWith("month:"),
+ scopeMonth=isMonthScope?String(id).slice(6):null,
+ sessionIds=isMonthScope
+   ?Object.entries(SESSIONS).filter(([,s])=>s.month===scopeMonth).map(([sessionId])=>sessionId)
+   :[id],
+ s=isMonthScope?{date:"Cumul "+sessionMonthLabel(scopeMonth),month:scopeMonth}:SESSIONS[id];
+ if(!s||!sessionIds.length)return;
+
+ const sessionSet=new Set(sessionIds),
+ games=GAMES.filter(g=>sessionSet.has(g.session)).sort((a,b)=>isMonthScope?(b.session.localeCompare(a.session)||a.n-b.n):a.n-b.n),
+ recs=RECORDS.filter(r=>sessionSet.has(r.session)),
  iw=games.filter(g=>g.winner==="Imposteurs").length,
  cw=games.filter(g=>g.winner==="Crewmates").length,
  uniquePlayers=[...new Set(recs.map(r=>r.p))],
- configuredParticipants=participantNamesForSession(id),
+ configuredParticipants=[...new Set(sessionIds.flatMap(sessionId=>participantNamesForSession(sessionId)))],
  participantCount=configuredParticipants.length||uniquePlayers.length,
  impRecords=recs.filter(r=>r.role==="Imposteur"),
  crewRecords=recs.filter(r=>r.role==="Crew"),
@@ -1599,6 +1621,15 @@ function renderSession(id){
  crewEjected=crewRecords.filter(r=>r.ejected).length,
  impEjected=impRecords.filter(r=>r.ejected).length,
  deathsT1=games.reduce((a,g)=>a+Number(g.t1Deaths||0),0);
+
+ const eyebrow=document.querySelector(".session-panel-detail .eyebrow"),
+ actionTitle=document.querySelector("#session-detail-actions h3"),
+ gamesTitle=document.querySelector("#session-detail-games h3"),
+ gameFirstHeader=document.querySelector("#session-detail-games thead th:first-child");
+ if(eyebrow)eyebrow.textContent=isMonthScope?"MOIS":"SESSION";
+ if(actionTitle)actionTitle.textContent=isMonthScope?"Actions du mois":"Actions de la soirée";
+ if(gamesTitle)gamesTitle.textContent=isMonthScope?"Résultat des games du mois":"Résultat des games";
+ if(gameFirstHeader)gameFirstHeader.textContent=isMonthScope?"Date / Game":"Game";
 
  document.getElementById("session-title").textContent=s.date;
  document.getElementById("session-summary").innerHTML=[
@@ -1676,7 +1707,7 @@ function renderSession(id){
       <td><strong>${esc(name)}</strong></td>
       <td>${rr.length}</td>
       <td>${pwins}/${rr.length} (${pct(pwins,rr.length)})</td>
-      <td>${imp.length}</td>
+      <td>${imp.length} (${pct(imp.length,rr.length)})</td>
       <td>${pkills}</td>
       <td>${preports}</td>
       <td>${pself}</td>
@@ -1688,7 +1719,10 @@ function renderSession(id){
     </tr>`
   }).join("");
 
- document.getElementById("session-games").innerHTML=games.map(g=>`<tr><td>${g.n}</td><td>${esc(g.map)}</td><td>${esc(g.winner)}</td><td>${esc(g.method)}</td><td>${g.t1Deaths||0}</td></tr>`).join("");
+ document.getElementById("session-games").innerHTML=games.map(g=>{
+   const gameLabel=isMonthScope?`${esc(SESSIONS[g.session]?.date||g.session)} · #${g.n}`:String(g.n);
+   return `<tr><td>${gameLabel}</td><td>${esc(g.map)}</td><td>${esc(g.winner)}</td><td>${esc(g.method)}</td><td>${g.t1Deaths||0}</td></tr>`;
+ }).join("");
  syncSessionDetailTabs();
 }
 function mostCommon(arr){const c={};(arr||[]).filter(Boolean).forEach(v=>c[v]=(c[v]||0)+1);const vals=Object.values(c),max=vals.length?Math.max(...vals):0;return max?Object.entries(c).filter(([,n])=>n===max).map(([v])=>v).join(" / "):undefined}
