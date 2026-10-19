@@ -504,6 +504,48 @@ function vrow(label,value,detail,icoName){return `<div class="vrow"><span class=
 function t1row(label,name,stat){return `<div class="t1mini"><div class="t1copy"><b class="t1label">${esc(label)}</b><strong class="t1name">${esc(name)}</strong><small class="t1stat">${esc(stat)}</small></div></div>`}
 function mentionRow(label,value,detail){return `<div class="mention-row"><div class="mention-copy"><b class="mention-label">${esc(label)}</b><small class="mention-detail">${esc(detail)}</small></div><strong class="mention-value">${esc(value)}</strong></div>`}
 
+let frontStatFitFrame=0;
+function fitFrontStatValues(){
+  function shrinkValue(el,container,minSize){
+    if(!el||!container)return;
+    el.style.removeProperty("font-size");
+    let size=parseFloat(getComputedStyle(el).fontSize);
+    if(!Number.isFinite(size))return;
+    const maxHeight=Math.max(1,container.clientHeight);
+    let guard=0;
+    while(size>minSize&&guard++<60&&(el.scrollHeight>maxHeight+1||el.scrollWidth>el.clientWidth+1)){
+      size=Math.max(minSize,size-.5);
+      el.style.fontSize=size+"px";
+    }
+  }
+
+  document.querySelectorAll(".visual-hall .vrow > strong,.visual-shame .vrow > strong").forEach(function(el){
+    shrinkValue(el,el.closest(".vrow"),6);
+  });
+  document.querySelectorAll(".mention-value").forEach(function(el){
+    shrinkValue(el,el.closest(".mention-row"),6);
+  });
+  document.querySelectorAll(".t1mini .t1name").forEach(function(el){
+    const box=el.closest(".t1mini"),copy=el.closest(".t1copy");
+    if(!box||!copy)return;
+    el.style.removeProperty("font-size");
+    let size=parseFloat(getComputedStyle(el).fontSize),guard=0;
+    if(!Number.isFinite(size))return;
+    while(size>6&&guard++<60&&copy.scrollHeight>Math.max(1,box.clientHeight-6)){
+      size=Math.max(6,size-.5);
+      el.style.fontSize=size+"px";
+    }
+  });
+}
+function scheduleFrontStatFit(){
+  if(frontStatFitFrame)cancelAnimationFrame(frontStatFitFrame);
+  frontStatFitFrame=requestAnimationFrame(function(){
+    frontStatFitFrame=0;
+    fitFrontStatValues();
+  });
+}
+window.addEventListener("resize",scheduleFrontStatFit);
+
 
 /* ===== CREWTEST : import JSON local ===== */
 function crewtestNormalizeMap(map){
@@ -1478,6 +1520,7 @@ function renderStats(){
  mentionRow("Map préférée des Imposteurs",impMaps.length?impMaps.map(([m])=>m).join(" & "):"Aucune",impMaps.length?`${pct(bestIM,1)} de victoires`:"Aucune victoire Imposteur"),
  mentionRow("Map la plus favorable au Crew",crewMaps.length?crewMaps.map(([m])=>m).join(" & "):"Aucune",crewMaps.length?`${pct(bestCM,1)} de victoires`:"Aucune victoire Crew")
  ].join("");
+ scheduleFrontStatFit();
 }
 
 function renderSessions(){
