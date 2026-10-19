@@ -117,12 +117,12 @@
       <div class="section-head">
         <div>
           <div class="section-title"><span class="section-icon">▦</span><h2>Sessions</h2></div>
-          <p>Choisis un mois : le cumul du mois et chaque soirée apparaissent dessous.</p>
+          <p>Choisis un mois, puis affiche le cumul ou une soirée précise.</p>
         </div>
-        <label>Mois
-          <select id="session-month"><option value="2026-09">Septembre 2026</option></select>
-        </label>
       </div>
+      <select id="session-month" hidden aria-hidden="true"><option value="2026-09">Septembre 2026</option></select>
+      <div id="session-month-cards" class="session-month-cards"></div>
+      <div class="session-choice-label">Cumul ou soirée</div>
       <div id="session-cards" class="session-cards"></div>
     </article>
 
