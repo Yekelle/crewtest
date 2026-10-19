@@ -551,7 +551,7 @@ window.addEventListener("resize",scheduleFrontStatFit);
 function crewtestNormalizeMap(map){
   const s=String(map||"").trim();
   if(/^skeld$/i.test(s))return "The Skeld";
-  if(/^fungle$/i.test(s))return "The Fungle";
+  if(/^fungle$/i.test(s)||s==="6")return "The Fungle";
   if(/^mira(\s*hq)?$/i.test(s))return "MIRA HQ";
   return s||"Inconnue";
 }
