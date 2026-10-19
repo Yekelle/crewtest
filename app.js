@@ -1528,7 +1528,26 @@ function sessionMonthLabel(month){
  option=select?[...select.options].find(o=>o.value===month):null;
  return option?.textContent?.trim()||month;
 }
+function renderSessionMonthCards(){
+ const box=document.getElementById("session-month-cards"),
+ select=document.getElementById("session-month"),
+ months=availableMonths(),
+ selected=select?.value||months[0]||"";
+ if(!box)return;
+ box.innerHTML=months.map(month=>{
+   const sessionCount=Object.values(SESSIONS).filter(s=>s.month===month).length,
+   gameCount=GAMES.filter(g=>SESSIONS[g.session]?.month===month).length;
+   return `<button class="session-month-card ${month===selected?"active":""}" type="button" data-month="${esc(month)}"><h3>${esc(monthLabel(month))}</h3><p>${sessionCount} soirée${sessionCount>1?"s":""} · ${gameCount} games</p></button>`;
+ }).join("");
+ box.querySelectorAll(".session-month-card").forEach(button=>button.addEventListener("click",()=>{
+   if(select)select.value=button.dataset.month;
+   currentSessionId=null;
+   currentSessionDetailTab="overview";
+   renderSessions();
+ }));
+}
 function renderSessions(){
+ renderSessionMonthCards();
  const month=document.getElementById("session-month").value,
  cards=document.getElementById("session-cards"),
  entries=Object.entries(SESSIONS).filter(([,s])=>s.month===month).sort((a,b)=>b[0].localeCompare(a[0]));
@@ -1554,8 +1573,8 @@ function renderSessions(){
  if(!validIds.has(currentSessionId))currentSessionId=monthId;
 
  cards.innerHTML=
-  `<button class="session-card session-card-month ${currentSessionId===monthId?"active":""}" data-id="${esc(monthId)}"><h3>Cumul ${esc(monthLabel)}</h3><p>${monthlyGames.length} games · ${monthlyPlayers.length} joueurs</p></button>`+
-  entries.map(([id,s])=>`<button class="session-card ${id===currentSessionId?"active":""}" data-id="${id}"><h3>${esc(s.date)}</h3><p>${GAMES.filter(g=>g.session===id).length} games enregistrées</p></button>`).join("");
+  `<button class="session-card session-card-month ${currentSessionId===monthId?"active":""}" type="button" data-id="${esc(monthId)}"><h3>Cumul du mois</h3><p>${monthlyGames.length} games · ${monthlyPlayers.length} joueurs</p></button>`+
+  entries.map(([id,s])=>`<button class="session-card ${id===currentSessionId?"active":""}" type="button" data-id="${id}"><h3>${esc(s.date)}</h3><p>${GAMES.filter(g=>g.session===id).length} games enregistrées</p></button>`).join("");
 
  cards.querySelectorAll(".session-card").forEach(b=>b.addEventListener("click",()=>{
    currentSessionId=b.dataset.id;
